@@ -1,10 +1,3 @@
-//
-//  ExternalVideoPlayerKura.swift
-//  Ryu
-//
-//  Created by Francesco on 09/07/24.
-//
-
 import AVKit
 import WebKit
 import SwiftSoup
@@ -162,11 +155,11 @@ class ExternalVideoPlayerKura: UIViewController, GCKRemoteMediaClientListener {
             let sourceElements = try videoElement?.select("source")
             
             sourceElements?.forEach { element in
-                if let _ = try? element.attr("size"),
+                if let _ = try? element.attr("size"), // Check if 'size' attribute exists
                    let url = try? element.attr("src") {
-                    let id = element.id()
+                    let id = element.id() // This should give "source1080", "source720", etc.
                     let qualityNumber = id.replacingOccurrences(of: "source", with: "")
-                    self.videoURLs[qualityNumber + "p"] = url
+                    self.videoURLs[qualityNumber + "p"] = url // Store as "1080p", "720p" etc.
                 }
             }
             
@@ -188,18 +181,20 @@ class ExternalVideoPlayerKura: UIViewController, GCKRemoteMediaClientListener {
         let preferredQuality = UserDefaults.standard.string(forKey: "preferredQuality") ?? "720p"
         
         if let url = videoURLs[preferredQuality] {
-            handleVideoURL(url: URL(string: url)!)
+            if let videoURL = URL(string: url) {
+                handleVideoURL(url: videoURL)
+            }
         } else {
-            let availableQualities = videoURLs.keys.map { Int($0.replacingOccurrences(of: "p", with: "")) ?? 0 }.sorted()
+            let availableQualities = videoURLs.keys.compactMap { Int($0.replacingOccurrences(of: "p", with: "")) }.sorted(by: >) // Sort descending
             let preferredQualityValue = Int(preferredQuality.replacingOccurrences(of: "p", with: "")) ?? 720
             
-            if let closestQuality = availableQualities.min(by: { abs($0 - preferredQualityValue) < abs($1 - preferredQualityValue) }) {
-                if let url = videoURLs["\(closestQuality)p"] {
-                    handleVideoURL(url: URL(string: url)!)
-                } else {
-                    showQualitySelectionPopup()
-                }
+            // Find the closest quality <= preferred, or the highest available if none match
+            let closestQuality = availableQualities.first { $0 <= preferredQualityValue } ?? availableQualities.first
+            
+            if let quality = closestQuality, let url = videoURLs["\(quality)p"], let videoURL = URL(string: url) {
+                 handleVideoURL(url: videoURL)
             } else {
+                // Fallback to showing picker if even closest fails
                 showQualitySelectionPopup()
             }
         }
@@ -217,6 +212,18 @@ class ExternalVideoPlayerKura: UIViewController, GCKRemoteMediaClientListener {
                     self?.handleVideoURL(url: url)
                 }
             })
+        }
+        
+        // Add cancel action
+        alertController.addAction(UIAlertAction(title: "Cancel", style: .cancel, handler: { [weak self] _ in
+            self?.dismiss(animated: true, completion: nil) // Dismiss if cancelled
+        }))
+        
+        // Popover presentation for iPad
+        if let popoverController = alertController.popoverPresentationController {
+            popoverController.sourceView = self.view
+            popoverController.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 0, height: 0)
+            popoverController.permittedArrowDirections = []
         }
         
         present(alertController, animated: true, completion: nil)
@@ -253,20 +260,8 @@ class ExternalVideoPlayerKura: UIViewController, GCKRemoteMediaClientListener {
         
         let downloadManager = DownloadManager.shared
         let title = animeDetailsViewController?.animeTitle ?? "Anime Download"
-        downloadManager.startDownload(url: url, title: title, progress: { progress in
-            print("Download progress: \(progress * 100)%")
-        }) { [weak self] result in
-            DispatchQueue.main.async {
-                switch result {
-                case .success(let downloadURL):
-                    print("Download completed. File saved at: \(downloadURL)")
-                    self?.animeDetailsViewController?.showAlert(withTitle: "Download Completed!", message: "You can find your download in the Library -> Downloads.")
-                case .failure(let error):
-                    print("Download failed with error: \(error.localizedDescription)")
-                    self?.animeDetailsViewController?.showAlert(withTitle: "Download Failed", message: error.localizedDescription)
-                }
-            }
-        }
+        downloadManager.startDownload(url: url, title: title)
+        self.animeDetailsViewController?.showAlert(withTitle: "Download Started", message: "Check the Downloads tab for progress.")
     }
     
     private func castVideoToGoogleCast(videoURL: URL) {
@@ -284,7 +279,7 @@ class ExternalVideoPlayerKura: UIViewController, GCKRemoteMediaClientListener {
         }
         
         let builder = GCKMediaInformationBuilder(contentURL: videoURL)
-        builder.contentType = "video/mp4"
+        builder.contentType = "video/mp4" // Assume mp4 for Kurama for now
         builder.metadata = metadata
         builder.streamType = UserDefaults.standard.string(forKey: "castStreamingType") == "live" ? .live : .buffered
         
