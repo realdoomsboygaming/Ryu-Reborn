@@ -3,8 +3,7 @@ import WebKit
 import SwiftSoup
 import GoogleCast
 
-// Add WKNavigationDelegate conformance here
-class ExternalVideoPlayerKura: UIViewController, GCKRemoteMediaClientListener, WKNavigationDelegate {
+class ExternalVideoPlayerKura: UIViewController, GCKRemoteMediaClientListener {
     private let streamURL: String
     private var webView: WKWebView?
     private var player: AVPlayer?
@@ -127,7 +126,7 @@ class ExternalVideoPlayerKura: UIViewController, GCKRemoteMediaClientListener, W
     
     private func setupWebView() {
         webView = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
-        webView?.navigationDelegate = self
+        webView?.navigationDelegate = self // Assign delegate here
     }
     
     private func loadInitialURL() {
@@ -155,12 +154,13 @@ class ExternalVideoPlayerKura: UIViewController, GCKRemoteMediaClientListener, W
             let videoElement = try doc.select("video#player").first()
             let sourceElements = try videoElement?.select("source")
             
+            videoURLs.removeAll() // Clear previous URLs before parsing again
             sourceElements?.forEach { element in
-                if let _ = try? element.attr("size"), // Check if 'size' attribute exists
+                if let _ = try? element.attr("size"),
                    let url = try? element.attr("src") {
-                    let id = element.id() // This should give "source1080", "source720", etc.
+                    let id = element.id()
                     let qualityNumber = id.replacingOccurrences(of: "source", with: "")
-                    self.videoURLs[qualityNumber + "p"] = url // Store as "1080p", "720p" etc.
+                    self.videoURLs[qualityNumber + "p"] = url
                 }
             }
             
@@ -184,16 +184,14 @@ class ExternalVideoPlayerKura: UIViewController, GCKRemoteMediaClientListener, W
         if let url = videoURLs[preferredQuality], let videoURL = URL(string: url) {
             handleVideoURL(url: videoURL)
         } else {
-             let availableQualities = videoURLs.keys.compactMap { Int($0.replacingOccurrences(of: "p", with: "")) }.sorted(by: >) // Sort descending
+            let availableQualities = videoURLs.keys.compactMap { Int($0.replacingOccurrences(of: "p", with: "")) }.sorted(by: >)
             let preferredQualityValue = Int(preferredQuality.replacingOccurrences(of: "p", with: "")) ?? 720
             
-            // Find the closest quality <= preferred, or the highest available if none match
             let closestQuality = availableQualities.first { $0 <= preferredQualityValue } ?? availableQualities.first
             
             if let quality = closestQuality, let url = videoURLs["\(quality)p"], let videoURL = URL(string: url) {
                  handleVideoURL(url: videoURL)
             } else {
-                // Fallback to showing picker if even closest fails
                 showQualitySelectionPopup()
             }
         }
@@ -214,10 +212,9 @@ class ExternalVideoPlayerKura: UIViewController, GCKRemoteMediaClientListener, W
         }
 
         alertController.addAction(UIAlertAction(title: "Cancel", style: .cancel, handler: { [weak self] _ in
-            self?.dismiss(animated: true, completion: nil) // Dismiss if cancelled
+            self?.dismiss(animated: true, completion: nil)
         }))
         
-        // Popover presentation for iPad
         if let popoverController = alertController.popoverPresentationController {
             popoverController.sourceView = self.view
             popoverController.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 0, height: 0)
@@ -258,7 +255,6 @@ class ExternalVideoPlayerKura: UIViewController, GCKRemoteMediaClientListener, W
         
         let downloadManager = DownloadManager.shared
         let title = animeDetailsViewController?.animeTitle ?? "Anime Download"
-        // **FIXED:** Removed progress and completion closures
         downloadManager.startDownload(url: url, title: title)
         
         self.animeDetailsViewController?.showAlert(withTitle: "Download Started", message: "Check the Downloads tab for progress.")
@@ -279,7 +275,7 @@ class ExternalVideoPlayerKura: UIViewController, GCKRemoteMediaClientListener, W
         }
         
         let builder = GCKMediaInformationBuilder(contentURL: videoURL)
-        builder.contentType = "video/mp4" // Assume MP4 for Kurama
+        builder.contentType = "video/mp4"
         builder.metadata = metadata
         builder.streamType = UserDefaults.standard.string(forKey: "castStreamingType") == "live" ? .live : .buffered
         
@@ -330,8 +326,8 @@ class ExternalVideoPlayerKura: UIViewController, GCKRemoteMediaClientListener, W
     
     private func updatePlaybackProgress(time: CMTime, duration: Double) {
         let currentTime = time.seconds
-        let progress = currentTime / duration
-        let remainingTime = duration - currentTime
+        let progress = duration > 0 ? currentTime / duration : 0 // Prevent division by zero
+        let remainingTime = duration > 0 ? duration - currentTime : 0
         
         cell.updatePlaybackProgress(progress: Float(progress), remainingTime: remainingTime)
         UserDefaults.standard.set(currentTime, forKey: "lastPlayedTime_\(fullURL)")
@@ -343,23 +339,22 @@ class ExternalVideoPlayerKura: UIViewController, GCKRemoteMediaClientListener, W
     
     private func updateContinueWatchingItem(currentTime: Double, duration: Double) {
         if let viewController = self.animeDetailsViewController,
-           let episodeNumber = viewController.episodes[safe: viewController.currentEpisodeIndex]?.number {
+           let episodeNumberString = viewController.episodes[safe: viewController.currentEpisodeIndex]?.number {
             
-            if let episodeNumberInt = Int(episodeNumber) {
-                let selectedMediaSource = UserDefaults.standard.string(forKey: "selectedMediaSource") ?? "Kuramanime"
-                
-                let continueWatchingItem = ContinueWatchingItem(
-                    animeTitle: viewController.animeTitle ?? "Unknown Anime",
-                    episodeTitle: "Ep. \(episodeNumberInt)",
-                    episodeNumber: episodeNumberInt,
-                    imageURL: viewController.imageUrl ?? "",
-                    fullURL: fullURL,
-                    lastPlayedTime: currentTime,
-                    totalTime: duration,
-                    source: selectedMediaSource
-                )
-                ContinueWatchingManager.shared.saveItem(continueWatchingItem)
-            }
+            let episodeNumber = EpisodeNumberExtractor.extract(from: episodeNumberString)
+            let selectedMediaSource = UserDefaults.standard.string(forKey: "selectedMediaSource") ?? "Kuramanime"
+            
+            let continueWatchingItem = ContinueWatchingItem(
+                animeTitle: viewController.animeTitle ?? "Unknown Anime",
+                episodeTitle: "Ep. \(episodeNumber)",
+                episodeNumber: episodeNumber,
+                imageURL: viewController.imageUrl ?? "",
+                fullURL: fullURL,
+                lastPlayedTime: currentTime,
+                totalTime: duration,
+                source: selectedMediaSource
+            )
+            ContinueWatchingManager.shared.saveItem(continueWatchingItem)
         }
     }
     
@@ -371,8 +366,12 @@ class ExternalVideoPlayerKura: UIViewController, GCKRemoteMediaClientListener, W
         
         let cleanedTitle = animeDetailsViewController.cleanTitle(animeDetailsViewController.animeTitle ?? "Unknown Anime")
         animeDetailsViewController.fetchAnimeID(title: cleanedTitle) { [weak self] animeID in
+            guard let self = self else { return }
+            let episodeNumberString = self.episodes[safe: self.currentEpisodeIndex]?.number ?? "0"
+            let episodeNumber = EpisodeNumberExtractor.extract(from: episodeNumberString)
+
             let aniListMutation = AniListMutation()
-            aniListMutation.updateAnimeProgress(animeId: animeID, episodeNumber: Int(self?.cell.episodeNumber ?? "0") ?? 0) { result in
+            aniListMutation.updateAnimeProgress(animeId: animeID, episodeNumber: episodeNumber) { result in
                 switch result {
                 case .success: print("Successfully updated anime progress.")
                 case .failure(let error): print("Failed to update anime progress: \(error.localizedDescription)")
@@ -412,7 +411,6 @@ class ExternalVideoPlayerKura: UIViewController, GCKRemoteMediaClientListener, W
         playerViewController = nil
         
         if let timeObserverToken = timeObserverToken {
-            // Ensure player exists before removing observer
             if let player = self.player {
                  player.removeTimeObserver(timeObserverToken)
             }
@@ -477,6 +475,7 @@ class ExternalVideoPlayerKura: UIViewController, GCKRemoteMediaClientListener, W
     }
 }
 
+// **FIXED:** Keep WKNavigationDelegate conformance only in the extension
 extension ExternalVideoPlayerKura: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         extractVideoSources()
