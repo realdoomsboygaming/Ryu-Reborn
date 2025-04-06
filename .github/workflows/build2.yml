@@ -2,7 +2,7 @@ name: Build and Release IPA for 2.0
 on:
   push:
     branches:
-      - Fork
+      - Working
 jobs:
   build:
     name: Build IPA
@@ -24,6 +24,6 @@ jobs:
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Ryu-IPA
+          name: RyuReborn
           path: build/Ryu.ipa
           compression-level: 0
