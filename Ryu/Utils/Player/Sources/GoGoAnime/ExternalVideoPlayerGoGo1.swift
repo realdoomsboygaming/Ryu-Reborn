@@ -1,10 +1,4 @@
-//
-//  ExternalVideoPlayer.swift
-//  Ryu
-//
-//  Created by Francesco on 03/07/24.
-//
-
+// Ryu/Utils/Player/Sources/GoGoAnime/ExternalVideoPlayerGoGo1.swift
 import AVKit
 import WebKit
 import Combine
@@ -265,7 +259,9 @@ class ExternalVideoPlayer: UIViewController, WKNavigationDelegate, CustomPlayerV
         
         for option in qualityOptions {
             alert.addAction(UIAlertAction(title: option.name, style: .default, handler: { [weak self] _ in
-                self?.handleVideoURL(url: URL(string: option.url)!)
+                if let url = URL(string: option.url) {
+                    self?.handleVideoURL(url: url)
+                }
             }))
         }
         
@@ -322,22 +318,10 @@ class ExternalVideoPlayer: UIViewController, WKNavigationDelegate, CustomPlayerV
         let downloadManager = DownloadManager.shared
         let title = self.animeDetailsViewController?.animeTitle ?? "Anime Download"
         
-        downloadManager.startDownload(url: url, title: title, progress: { progress in
-            DispatchQueue.main.async {
-                print("Download progress: \(progress * 100)%")
-            }
-        }) { [weak self] result in
-            DispatchQueue.main.async {
-                switch result {
-                case .success(let downloadURL):
-                    print("Download completed. File saved at: \(downloadURL)")
-                    self?.animeDetailsViewController?.showAlert(withTitle: "Download Completed!", message: "You can find your download in the Library -> Downloads.")
-                case .failure(let error):
-                    print("Download failed with error: \(error.localizedDescription)")
-                    self?.animeDetailsViewController?.showAlert(withTitle: "Download Failed", message: error.localizedDescription)
-                }
-            }
-        }
+        downloadManager.startDownload(url: url, title: title)
+        
+        // Show confirmation to the user
+        self.animeDetailsViewController?.showAlert(withTitle: "Download Started", message: "Check the Downloads tab for progress.")
     }
     
     private func castVideoToGoogleCast(videoURL: URL) {
@@ -364,7 +348,7 @@ class ExternalVideoPlayer: UIViewController, WKNavigationDelegate, CustomPlayerV
             }
             
             let builder = GCKMediaInformationBuilder(contentURL: videoURL)
-            builder.contentType = "video/mp4"
+            builder.contentType = "video/mp4" // Assuming MP4 from GoGoAnime download links
             builder.metadata = metadata
             
             let streamTypeString = UserDefaults.standard.string(forKey: "castStreamingType") ?? "buffered"
@@ -565,5 +549,25 @@ class ExternalVideoPlayer: UIViewController, WKNavigationDelegate, CustomPlayerV
     deinit {
         cleanup()
         NotificationCenter.default.removeObserver(self)
+    }
+}
+
+// Required WKNavigationDelegate methods (can be empty if not needed for other logic)
+extension ExternalVideoPlayer: WKNavigationDelegate {
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        // Optional: Could try extracting links here if the timer approach fails
+        print("WebView finished loading: \(webView.url?.absoluteString ?? "No URL")")
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        print("WebView navigation failed: \(error)")
+        // Could trigger retry here if needed
+        retryExtractVideoLinks()
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+         print("WebView provisional navigation failed: \(error)")
+        // Could trigger retry here if needed
+        retryExtractVideoLinks()
     }
 }
