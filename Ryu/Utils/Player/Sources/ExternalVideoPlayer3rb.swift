@@ -3,7 +3,8 @@ import WebKit
 import SwiftSoup
 import GoogleCast
 
-class ExternalVideoPlayer3rb: UIViewController, GCKRemoteMediaClientListener {
+// Add WKNavigationDelegate conformance here
+class ExternalVideoPlayer3rb: UIViewController, GCKRemoteMediaClientListener, WKNavigationDelegate {
     private let streamURL: String
     private var webView: WKWebView?
     private var player: AVPlayer?
@@ -163,7 +164,7 @@ class ExternalVideoPlayer3rb: UIViewController, GCKRemoteMediaClientListener {
         webView?.evaluateJavaScript("document.body.innerHTML") { [weak self] (result, error) in
             guard let self = self, let htmlString = result as? String else {
                 print("Error getting HTML: \(error?.localizedDescription ?? "Unknown error")")
-                self.retryExtraction()
+                self?.retryExtraction() // Use optional chaining
                 return
             }
             
@@ -172,7 +173,7 @@ class ExternalVideoPlayer3rb: UIViewController, GCKRemoteMediaClientListener {
                 self.loadIframeContent(url: iframeURL)
             } else {
                 print("No iframe source found")
-                self.retryExtraction()
+                self.retryExtraction() // Use optional chaining
             }
         }
     }
@@ -181,7 +182,7 @@ class ExternalVideoPlayer3rb: UIViewController, GCKRemoteMediaClientListener {
         webView?.evaluateJavaScript("document.body.innerHTML") { [weak self] (result, error) in
             guard let self = self, let htmlString = result as? String else {
                 print("Error getting HTML: \(error?.localizedDescription ?? "Unknown error")")
-                self.retryExtraction()
+                self?.retryExtraction() // Use optional chaining
                 return
             }
             
@@ -192,7 +193,7 @@ class ExternalVideoPlayer3rb: UIViewController, GCKRemoteMediaClientListener {
                 }
             } else {
                 print("No video source found in iframe content")
-                self.retryExtraction()
+                self.retryExtraction() // Use optional chaining
             }
         }
     }
@@ -254,9 +255,9 @@ class ExternalVideoPlayer3rb: UIViewController, GCKRemoteMediaClientListener {
             let diff1 = abs(val1 - preferredValue)
             let diff2 = abs(val2 - preferredValue)
             if diff1 != diff2 {
-                return diff1 < diff2 // Closer quality first
+                return diff1 < diff2
             }
-            return val1 > val2 // If same difference, prefer higher quality
+            return val1 > val2
         }
         return sortedQualities.first
     }
@@ -270,12 +271,11 @@ class ExternalVideoPlayer3rb: UIViewController, GCKRemoteMediaClientListener {
             }
             alertController.addAction(action)
         }
-        
-         // Add cancel action
-        alertController.addAction(UIAlertAction(title: "Cancel", style: .cancel, handler: { [weak self] _ in
-             self?.dismiss(animated: true, completion: nil) // Dismiss if cancelled
-         }))
 
+        alertController.addAction(UIAlertAction(title: "Cancel", style: .cancel, handler: { [weak self] _ in
+            self?.dismiss(animated: true, completion: nil) // Dismiss if cancelled
+        }))
+        
         // Popover presentation for iPad
         if let popoverController = alertController.popoverPresentationController {
             popoverController.sourceView = self.view
@@ -366,7 +366,9 @@ class ExternalVideoPlayer3rb: UIViewController, GCKRemoteMediaClientListener {
         let downloadManager = DownloadManager.shared
         let title = self.animeDetailsViewController?.animeTitle ?? "Anime Download"
         
+        // **FIXED:** Removed progress and completion closures
         downloadManager.startDownload(url: url, title: title)
+        
         self.animeDetailsViewController?.showAlert(withTitle: "Download Started", message: "Check the Downloads tab for progress.")
     }
     
@@ -418,7 +420,7 @@ class ExternalVideoPlayer3rb: UIViewController, GCKRemoteMediaClientListener {
             }
             
             let builder = GCKMediaInformationBuilder(contentURL: videoURL)
-            builder.contentType = "video/mp4" // Assume mp4 for 3rb for now
+            builder.contentType = "video/mp4"
             builder.metadata = metadata
             
             let streamTypeString = UserDefaults.standard.string(forKey: "castStreamingType") ?? "buffered"
@@ -521,7 +523,10 @@ class ExternalVideoPlayer3rb: UIViewController, GCKRemoteMediaClientListener {
         playerViewController = nil
         
         if let timeObserverToken = timeObserverToken {
-            player?.removeTimeObserver(timeObserverToken)
+             // Ensure player exists before removing observer
+            if let player = self.player {
+                player.removeTimeObserver(timeObserverToken)
+            }
             self.timeObserverToken = nil
         }
         
