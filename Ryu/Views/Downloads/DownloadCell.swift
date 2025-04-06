@@ -67,11 +67,11 @@ class DownloadCell: UITableViewCell {
     
     func configure(with metadata: DownloadMetadata) {
         titleLabel.text = metadata.title
-        sizeLabel.text = ByteCountFormatter.string(fromByteCount: Int64(metadata.fileSize), countStyle: .file)
+        sizeLabel.text = ByteCountFormatter.string(fromByteCount: metadata.fileSize ?? 0, countStyle: .file)
         
         let dateFormatter = DateFormatter()
         dateFormatter.dateStyle = .medium
         dateFormatter.timeStyle = .short
-        dateLabel.text = dateFormatter.string(from: metadata.dateAdded)
+        dateLabel.text = dateFormatter.string(from: metadata.createdAt)
     }
 }

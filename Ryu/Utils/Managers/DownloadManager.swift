@@ -12,10 +12,10 @@ import Combine
 // Download states
 enum DownloadState: String, Codable {
     case queued
-    case downloading
+    case downloading(progress: Float, speed: Double)
     case paused
     case completed
-    case failed
+    case failed(error: String)
     case cancelled
     
     var progress: Float {
@@ -40,7 +40,7 @@ enum DownloadState: String, Codable {
         case "downloading": self = .downloading(progress: 0, speed: 0)
         case "paused": self = .paused
         case "completed": self = .completed
-        case "failed": self = .failed
+        case "failed": self = .failed(error: "Unknown error")
         case "cancelled": self = .cancelled
         default: throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid state")
         }
@@ -83,205 +83,206 @@ struct DownloadMetadata: Codable {
 class DownloadManager {
     static let shared = DownloadManager()
     
-    private var activeDownloads: [String: DownloadMetadata] = [:]
-    private var downloadQueue: OperationQueue
-    private var downloadTasks: [String: URLSessionDownloadTask] = [:]
-    private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
-    private var stateObservers: [String: AnyCancellable] = [:]
-    
+    private let queue = OperationQueue()
     private let fileManager = FileManager.default
-    private let metadataQueue = DispatchQueue(label: "com.ryu.downloadmanager.metadata")
-    private let downloadDirectory: URL
+    private let decoder = JSONDecoder()
+    private let encoder = JSONEncoder()
+    
+    private var activeDownloads: [String: DownloadMetadata] = [:]
+    private var downloadTasks: [String: URLSessionDownloadTask] = [:]
+    private var downloadProgress: [String: (progress: Float, speed: Int64)] = [:]
+    private var lastProgressUpdate: [String: Date] = [:]
+    private var lastBytesDownloaded: [String: Int64] = [:]
     
     private init() {
-        downloadQueue = OperationQueue()
-        downloadQueue.maxConcurrentOperationCount = 3
-        downloadQueue.qualityOfService = .utility
-        
-        // Set up downloads directory
-        let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        downloadDirectory = documentsURL.appendingPathComponent("Downloads", isDirectory: true)
-        
-        do {
-            try fileManager.createDirectory(at: downloadDirectory, withIntermediateDirectories: true)
-        } catch {
-            print("Failed to create downloads directory: \(error)")
-        }
-        
-        // Load existing downloads
-        loadExistingDownloads()
+        queue.maxConcurrentOperationCount = 3
+        loadSavedDownloads()
     }
     
     // MARK: - Public Methods
     
-    func startDownload(url: URL, title: String, priority: DownloadPriority = .normal, progress: @escaping (Float) -> Void, completion: @escaping (Result<URL, Error>) -> Void) {
-        let downloadId = UUID().uuidString
-        let sanitizedTitle = title.sanitizedFileName
-        let destinationURL = downloadDirectory.appendingPathComponent("\(sanitizedTitle).mp4")
-        
+    func startDownload(url: URL, title: String) -> String {
+        let id = UUID().uuidString
         let metadata = DownloadMetadata(
-            id: downloadId,
+            id: id,
             title: title,
             sourceURL: url,
-            destinationURL: destinationURL,
+            destinationURL: URL(fileURLWithPath: ""),
             fileSize: nil,
             createdAt: Date(),
-            priority: priority,
+            priority: .normal,
             state: .queued
         )
         
-        metadataQueue.async { [weak self] in
-            self?.activeDownloads[downloadId] = metadata
-            self?.saveMetadata()
-        }
+        activeDownloads[id] = metadata
+        saveDownloads()
         
-        setupDownloadTask(for: metadata, progress: progress, completion: completion)
+        let task = createDownloadTask(for: metadata)
+        downloadTasks[id] = task
+        task.resume()
+        
+        return id
     }
     
     func pauseDownload(id: String) {
         guard let task = downloadTasks[id] else { return }
         task.suspend()
         
-        metadataQueue.async { [weak self] in
-            guard let self = self,
-                  var metadata = self.activeDownloads[id] else { return }
+        if var metadata = activeDownloads[id] {
             metadata.state = .paused
-            metadata.resumeData = task.resumeData
-            self.activeDownloads[id] = metadata
-            self.saveMetadata()
+            activeDownloads[id] = metadata
+            saveDownloads()
+            postNotification(name: .downloadDidUpdate, metadata: metadata)
         }
     }
     
     func resumeDownload(id: String) {
-        guard let metadata = activeDownloads[id],
-              let resumeData = metadata.resumeData else { return }
-        
-        let configuration = URLSessionConfiguration.background(withIdentifier: "me.cranci.downloader.\(id)")
-        configuration.waitsForConnectivity = true
-        let session = URLSession(configuration: configuration, delegate: BackgroundSessionDelegate.shared, delegateQueue: nil)
-        
-        let task = session.downloadTask(withResumeData: resumeData)
-        downloadTasks[id] = task
-        
-        metadataQueue.async { [weak self] in
-            guard let self = self else { return }
-            var updatedMetadata = metadata
-            updatedMetadata.state = .downloading(progress: 0, speed: 0)
-            self.activeDownloads[id] = updatedMetadata
-            self.saveMetadata()
-        }
-        
+        guard let task = downloadTasks[id] else { return }
         task.resume()
+        
+        if var metadata = activeDownloads[id] {
+            metadata.state = .downloading(progress: metadata.progress, speed: 0)
+            activeDownloads[id] = metadata
+            saveDownloads()
+            postNotification(name: .downloadDidUpdate, metadata: metadata)
+        }
     }
     
     func cancelDownload(id: String) {
         guard let task = downloadTasks[id] else { return }
         task.cancel()
-        downloadTasks.removeValue(forKey: id)
         
-        metadataQueue.async { [weak self] in
-            guard let self = self else { return }
-            var metadata = self.activeDownloads[id]
-            metadata?.state = .cancelled
-            self.activeDownloads[id] = metadata
-            self.saveMetadata()
+        downloadTasks.removeValue(forKey: id)
+        downloadProgress.removeValue(forKey: id)
+        lastProgressUpdate.removeValue(forKey: id)
+        lastBytesDownloaded.removeValue(forKey: id)
+        
+        if var metadata = activeDownloads[id] {
+            metadata.state = .cancelled
+            activeDownloads[id] = metadata
+            saveDownloads()
+            postNotification(name: .downloadDidUpdate, metadata: metadata)
         }
     }
     
-    func getActiveDownloads() -> [String: DownloadMetadata] {
-        return activeDownloads
+    func getActiveDownloads() -> [DownloadMetadata] {
+        return Array(activeDownloads.values)
+    }
+    
+    func getDownloadMetadata(id: String) -> DownloadMetadata? {
+        return activeDownloads[id]
     }
     
     // MARK: - Private Methods
     
-    private func setupDownloadTask(for metadata: DownloadMetadata, progress: @escaping (Float) -> Void, completion: @escaping (Result<URL, Error>) -> Void) {
-        let configuration = URLSessionConfiguration.background(withIdentifier: "me.cranci.downloader.\(metadata.id)")
-        configuration.waitsForConnectivity = true
-        let session = URLSession(configuration: configuration, delegate: BackgroundSessionDelegate.shared, delegateQueue: nil)
+    private func createDownloadTask(for metadata: DownloadMetadata) -> URLSessionDownloadTask {
+        let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
+        let task = session.downloadTask(with: metadata.sourceURL)
         
-        var request = URLRequest(url: metadata.sourceURL)
-        request.httpMethod = "GET"
-        request.cachePolicy = .reloadIgnoringLocalCacheData
-        
-        let task = session.downloadTask(with: request)
-        downloadTasks[metadata.id] = task
-        
-        // Set up progress observation
-        let progressObserver = task.progress.observe(\.fractionCompleted, options: [.new]) { [weak self] taskProgress, _ in
-            DispatchQueue.main.async {
-                let speed = self?.calculateDownloadSpeed(for: metadata.id) ?? 0
-                progress(Float(taskProgress.fractionCompleted))
-                
-                self?.metadataQueue.async {
-                    guard let self = self else { return }
-                    var updatedMetadata = self.activeDownloads[metadata.id]
-                    updatedMetadata?.state = .downloading(progress: Float(taskProgress.fractionCompleted), speed: speed)
-                    self.activeDownloads[metadata.id] = updatedMetadata
-                    self.saveMetadata()
-                }
-            }
-        }
-        
-        stateObservers[metadata.id] = progressObserver
-        
-        // Set up completion handler
-        BackgroundSessionDelegate.shared.downloadCompletionHandler = { [weak self] result in
-            DispatchQueue.main.async {
-                self?.downloadTasks.removeValue(forKey: metadata.id)
-                self?.stateObservers.removeValue(forKey: metadata.id)
-                
-                self?.metadataQueue.async {
-                    guard let self = self else { return }
-                    var updatedMetadata = self.activeDownloads[metadata.id]
-                    switch result {
-                    case .success(let url):
-                        updatedMetadata?.state = .completed
-                        completion(.success(url))
-                    case .failure(let error):
-                        updatedMetadata?.state = .failed
-                        updatedMetadata?.error = error.localizedDescription
-                        completion(.failure(error))
-                    }
-                    self.activeDownloads[metadata.id] = updatedMetadata
-                    self.saveMetadata()
-                }
-            }
-        }
-        
-        task.resume()
+        task.taskDescription = metadata.id
+        return task
     }
     
-    private func calculateDownloadSpeed(for id: String) -> Double {
-        // Implement download speed calculation
-        return 0.0
-    }
-    
-    private func loadExistingDownloads() {
-        let metadataURL = downloadDirectory.appendingPathComponent("downloads.json")
-        guard let data = try? Data(contentsOf: metadataURL),
-              let downloads = try? JSONDecoder().decode([String: DownloadMetadata].self, from: data) else {
+    private func loadSavedDownloads() {
+        guard let data = UserDefaults.standard.data(forKey: "savedDownloads"),
+              let downloads = try? decoder.decode([String: DownloadMetadata].self, from: data) else {
             return
         }
         
         activeDownloads = downloads
     }
     
-    private func saveMetadata() {
-        let metadataURL = downloadDirectory.appendingPathComponent("downloads.json")
-        guard let data = try? JSONEncoder().encode(activeDownloads) else { return }
+    private func saveDownloads() {
+        guard let data = try? encoder.encode(activeDownloads) else { return }
+        UserDefaults.standard.set(data, forKey: "savedDownloads")
+    }
+    
+    private func postNotification(name: Notification.Name, metadata: DownloadMetadata) {
+        NotificationCenter.default.post(name: name, object: nil, userInfo: ["metadata": metadata])
+    }
+    
+    private func calculateDownloadSpeed(for id: String) -> Int64 {
+        guard let lastUpdate = lastProgressUpdate[id],
+              let lastBytes = lastBytesDownloaded[id] else {
+            return 0
+        }
         
-        do {
-            try data.write(to: metadataURL)
-        } catch {
-            print("Failed to save download metadata: \(error)")
+        let timeInterval = Date().timeIntervalSince(lastUpdate)
+        guard timeInterval > 0 else { return 0 }
+        
+        let currentBytes = Int64(Float(lastBytes) * (activeDownloads[id]?.progress ?? 0))
+        let bytesPerSecond = Double(currentBytes - lastBytes) / timeInterval
+        
+        return Int64(bytesPerSecond)
+    }
+    
+    private func updateDownloadProgress(id: String, progress: Float) {
+        let speed = calculateDownloadSpeed(for: id)
+        downloadProgress[id] = (progress: progress, speed: speed)
+        lastProgressUpdate[id] = Date()
+        
+        if var metadata = activeDownloads[id] {
+            metadata.state = .downloading(progress: progress, speed: speed)
+            activeDownloads[id] = metadata
+            saveDownloads()
+            postNotification(name: .downloadDidUpdate, metadata: metadata)
         }
     }
-}
-
-// MARK: - Helper Extensions
-
-extension String {
-    var sanitizedFileName: String {
-        return self.replacingOccurrences(of: "[\\/:*?\"<>|]", with: "_", options: .regularExpression)
+    
+    private func handleDownloadCompletion(id: String, location: URL) {
+        guard var metadata = activeDownloads[id] else { return }
+        
+        do {
+            let destinationURL = try getDestinationURL(for: metadata)
+            try fileManager.moveItem(at: location, to: destinationURL)
+            
+            metadata.state = .completed
+            activeDownloads[id] = metadata
+            saveDownloads()
+            
+            downloadTasks.removeValue(forKey: id)
+            downloadProgress.removeValue(forKey: id)
+            lastProgressUpdate.removeValue(forKey: id)
+            lastBytesDownloaded.removeValue(forKey: id)
+            
+            postNotification(name: .downloadDidComplete, metadata: metadata)
+        } catch {
+            metadata.state = .failed(error: error.localizedDescription)
+            activeDownloads[id] = metadata
+            saveDownloads()
+            postNotification(name: .downloadDidUpdate, metadata: metadata)
+        }
+    }
+    
+    private func getDestinationURL(for metadata: DownloadMetadata) throws -> URL {
+        let documentsPath = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let fileName = metadata.sourceURL.lastPathComponent
+        return documentsPath.appendingPathComponent(fileName)
     }
 }
+
+// MARK: - URLSession Delegate
+
+extension DownloadManager: URLSessionDownloadDelegate {
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
+        guard let id = downloadTask.taskDescription else { return }
+        handleDownloadCompletion(id: id, location: location)
+    }
+    
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
+        guard let id = downloadTask.taskDescription else { return }
+        
+        let progress = Float(totalBytesWritten) / Float(totalBytesExpectedToWrite)
+        lastBytesDownloaded[id] = totalBytesWritten
+        updateDownloadProgress(id: id, progress: progress)
+    }
+}
+
+// MARK: - Notification Names
+
+extension Notification.Name {
+    static let downloadDidUpdate = Notification.Name("downloadDidUpdate")
+    static let downloadDidComplete = Notification.Name("downloadDidComplete")
+}
+
+

@@ -9,127 +9,119 @@ import UIKit
 import Combine
 
 class ActiveDownloadsViewController: UIViewController {
-    private let tableView = UITableView()
-    private let emptyStateLabel = UILabel()
-    private let downloadManager = DownloadManager.shared
-    private var cancellables = Set<AnyCancellable>()
-    private var updateTimer: Timer?
+    private let tableView: UITableView = {
+        let table = UITableView()
+        table.register(ProgressDownloadCell.self, forCellReuseIdentifier: ProgressDownloadCell.identifier)
+        table.separatorStyle = .none
+        return table
+    }()
     
-    private var downloads: [URL: DownloadMetadata] = [:] {
-        didSet {
-            tableView.reloadData()
-            updateEmptyState()
-        }
-    }
+    private var activeDownloads: [DownloadMetadata] = []
+    private let downloadManager = DownloadManager.shared
     
     override func viewDidLoad() {
         super.viewDidLoad()
         setupViews()
+        setupTableView()
         setupNotifications()
-        setupTimer()
-        loadDownloads()
-    }
-    
-    override func viewWillDisappear(_ animated: Bool) {
-        super.viewWillDisappear(animated)
-        updateTimer?.invalidate()
-        updateTimer = nil
+        loadActiveDownloads()
     }
     
     private func setupViews() {
         view.backgroundColor = .systemBackground
-        title = "Active Downloads"
-        
-        tableView.delegate = self
-        tableView.dataSource = self
-        tableView.register(ProgressDownloadCell.self, forCellReuseIdentifier: ProgressDownloadCell.identifier)
-        tableView.separatorStyle = .none
-        tableView.backgroundColor = .systemBackground
         view.addSubview(tableView)
         
-        emptyStateLabel.text = "No active downloads"
-        emptyStateLabel.textAlignment = .center
-        emptyStateLabel.textColor = .secondaryLabel
-        emptyStateLabel.font = .systemFont(ofSize: 16)
-        emptyStateLabel.isHidden = true
-        view.addSubview(emptyStateLabel)
-        
         tableView.translatesAutoresizingMaskIntoConstraints = false
-        emptyStateLabel.translatesAutoresizingMaskIntoConstraints = false
-        
         NSLayoutConstraint.activate([
-            tableView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            tableView.topAnchor.constraint(equalTo: view.topAnchor),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            
-            emptyStateLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            emptyStateLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor)
+            tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
     }
     
+    private func setupTableView() {
+        tableView.delegate = self
+        tableView.dataSource = self
+    }
+    
     private func setupNotifications() {
-        NotificationCenter.default.publisher(for: .downloadListUpdated)
-            .sink { [weak self] _ in
-                self?.loadDownloads()
-            }
-            .store(in: &cancellables)
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleDownloadUpdate),
+            name: .downloadDidUpdate,
+            object: nil
+        )
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleDownloadComplete),
+            name: .downloadDidComplete,
+            object: nil
+        )
     }
     
-    private func setupTimer() {
-        updateTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            self?.updateDownloadProgress()
+    private func loadActiveDownloads() {
+        activeDownloads = downloadManager.getActiveDownloads()
+        tableView.reloadData()
+    }
+    
+    @objc private func handleDownloadUpdate(_ notification: Notification) {
+        guard let metadata = notification.userInfo?["metadata"] as? DownloadMetadata else { return }
+        
+        if let index = activeDownloads.firstIndex(where: { $0.id == metadata.id }) {
+            activeDownloads[index] = metadata
+            tableView.reloadRows(at: [IndexPath(row: index, section: 0)], with: .none)
         }
     }
     
-    private func loadDownloads() {
-        downloads = downloadManager.getActiveDownloads()
-    }
-    
-    private func updateDownloadProgress() {
-        for (url, metadata) in downloads {
-            if let updatedMetadata = downloadManager.getDownloadMetadata(for: url) {
-                downloads[url] = updatedMetadata
-            }
+    @objc private func handleDownloadComplete(_ notification: Notification) {
+        guard let metadata = notification.userInfo?["metadata"] as? DownloadMetadata else { return }
+        
+        if let index = activeDownloads.firstIndex(where: { $0.id == metadata.id }) {
+            activeDownloads.remove(at: index)
+            tableView.deleteRows(at: [IndexPath(row: index, section: 0)], with: .fade)
         }
-    }
-    
-    private func updateEmptyState() {
-        emptyStateLabel.isHidden = !downloads.isEmpty
     }
 }
 
 extension ActiveDownloadsViewController: UITableViewDelegate, UITableViewDataSource {
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return downloads.count
+        return activeDownloads.count
     }
     
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell = tableView.dequeueReusableCell(withIdentifier: ProgressDownloadCell.identifier, for: indexPath) as! ProgressDownloadCell
-        let metadata = Array(downloads.values)[indexPath.row]
-        cell.configure(with: metadata)
+        guard let cell = tableView.dequeueReusableCell(withIdentifier: ProgressDownloadCell.identifier, for: indexPath) as? ProgressDownloadCell else {
+            return UITableViewCell()
+        }
+        
+        let metadata = activeDownloads[indexPath.row]
         cell.delegate = self
+        cell.configure(with: metadata)
         return cell
     }
     
     func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
-        return 88
+        return 100
     }
 }
 
 extension ActiveDownloadsViewController: ProgressDownloadCellDelegate {
-    func progressDownloadCell(_ cell: ProgressDownloadCell, didTapPauseResume url: URL) {
-        if let metadata = downloads[url] {
-            if metadata.state == .paused {
-                downloadManager.resumeDownload(for: url)
-            } else {
-                downloadManager.pauseDownload(for: url)
+    func progressDownloadCell(_ cell: ProgressDownloadCell, didTapPauseResume id: String) {
+        if let metadata = activeDownloads.first(where: { $0.id == id }) {
+            switch metadata.state {
+            case .downloading, .queued:
+                downloadManager.pauseDownload(id: id)
+            case .paused:
+                downloadManager.resumeDownload(id: id)
+            default:
+                break
             }
         }
     }
     
-    func progressDownloadCell(_ cell: ProgressDownloadCell, didTapCancel url: URL) {
-        downloadManager.cancelDownload(for: url)
+    func progressDownloadCell(_ cell: ProgressDownloadCell, didTapCancel id: String) {
+        downloadManager.cancelDownload(id: id)
     }
 }
 

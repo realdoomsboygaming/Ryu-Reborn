@@ -8,15 +8,15 @@
 import UIKit
 
 protocol ProgressDownloadCellDelegate: AnyObject {
-    func progressDownloadCell(_ cell: ProgressDownloadCell, didTapPauseResume url: URL)
-    func progressDownloadCell(_ cell: ProgressDownloadCell, didTapCancel url: URL)
+    func progressDownloadCell(_ cell: ProgressDownloadCell, didTapPauseResume id: String)
+    func progressDownloadCell(_ cell: ProgressDownloadCell, didTapCancel id: String)
 }
 
 class ProgressDownloadCell: UITableViewCell {
     static let identifier = "ProgressDownloadCell"
     
     weak var delegate: ProgressDownloadCellDelegate?
-    private var downloadURL: URL?
+    private var downloadId: String?
     
     private let titleLabel: UILabel = {
         let label = UILabel()
@@ -116,23 +116,56 @@ class ProgressDownloadCell: UITableViewCell {
     }
     
     func configure(with metadata: DownloadMetadata) {
-        downloadURL = metadata.url
+        downloadId = metadata.id
         titleLabel.text = metadata.title
-        progressView.progress = Float(metadata.progress)
-        progressLabel.text = "\(Int(metadata.progress * 100))%"
-        speedLabel.text = ByteCountFormatter.string(fromByteCount: Int64(metadata.downloadSpeed), countStyle: .binary) + "/s"
         
-        let imageName = metadata.state == .paused ? "play.fill" : "pause.fill"
-        pauseResumeButton.setImage(UIImage(systemName: imageName), for: .normal)
+        switch metadata.state {
+        case .queued:
+            progressView.progress = 0
+            progressLabel.text = "Queued"
+            speedLabel.text = ""
+            pauseResumeButton.setImage(UIImage(systemName: "xmark.circle"), for: .normal)
+            pauseResumeButton.tintColor = .systemRed
+        case .downloading(let progress, let speed):
+            progressView.progress = progress
+            progressLabel.text = "\(Int(progress * 100))%"
+            speedLabel.text = ByteCountFormatter.string(fromByteCount: Int64(speed), countStyle: .binary) + "/s"
+            pauseResumeButton.setImage(UIImage(systemName: "pause.circle"), for: .normal)
+            pauseResumeButton.tintColor = .systemBlue
+        case .paused:
+            progressView.progress = metadata.progress
+            progressLabel.text = "\(Int(metadata.progress * 100))%"
+            speedLabel.text = "Paused"
+            pauseResumeButton.setImage(UIImage(systemName: "play.circle"), for: .normal)
+            pauseResumeButton.tintColor = .systemGreen
+        case .completed:
+            progressView.progress = 1
+            progressLabel.text = "Completed"
+            speedLabel.text = ""
+            pauseResumeButton.setImage(UIImage(systemName: "checkmark.circle"), for: .normal)
+            pauseResumeButton.tintColor = .systemGreen
+        case .failed(let error):
+            progressView.progress = 0
+            progressLabel.text = "Failed: \(error)"
+            speedLabel.text = ""
+            pauseResumeButton.setImage(UIImage(systemName: "xmark.circle"), for: .normal)
+            pauseResumeButton.tintColor = .systemRed
+        case .cancelled:
+            progressView.progress = 0
+            progressLabel.text = "Cancelled"
+            speedLabel.text = ""
+            pauseResumeButton.setImage(UIImage(systemName: "xmark.circle"), for: .normal)
+            pauseResumeButton.tintColor = .systemRed
+        }
     }
     
     @objc private func pauseResumeTapped() {
-        guard let url = downloadURL else { return }
-        delegate?.progressDownloadCell(self, didTapPauseResume: url)
+        guard let id = downloadId else { return }
+        delegate?.progressDownloadCell(self, didTapPauseResume: id)
     }
     
     @objc private func cancelTapped() {
-        guard let url = downloadURL else { return }
-        delegate?.progressDownloadCell(self, didTapCancel: url)
+        guard let id = downloadId else { return }
+        delegate?.progressDownloadCell(self, didTapCancel: id)
     }
 }
