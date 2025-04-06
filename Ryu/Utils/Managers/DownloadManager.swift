@@ -32,18 +32,14 @@ struct DownloadItem: Identifiable, Codable {
         case unknown
     }
 
-    // CodingKeys needed because downloadTaskIdentifier is optional and potentially transient if not persisted
     enum CodingKeys: String, CodingKey {
         case id, title, sourceURL, progress, status, format, completedFileURL, totalBytesExpected, totalBytesWritten, errorDescription
-        // Exclude downloadTaskIdentifier from Codable persistence if desired
     }
 
-    // Helper to get a displayable progress string
     var progressString: String {
         String(format: "%.0f%%", progress * 100)
     }
 
-    // Helper to get file size string if available
     var fileSizeString: String {
         guard let totalBytes = totalBytesExpected, totalBytes > 0 else { return "N/A" }
         return ByteCountFormatter.string(fromByteCount: totalBytes, countStyle: .file)
@@ -53,7 +49,7 @@ struct DownloadItem: Identifiable, Codable {
 class DownloadManager: NSObject, ObservableObject {
     static let shared = DownloadManager()
 
-    @Published private(set) var activeDownloads: [String: DownloadItem] = [:] // Keyed by DownloadItem.id
+    @Published private(set) var activeDownloads: [String: DownloadItem] = [:]
     @Published private(set) var completedDownloads: [DownloadItem] = []
 
     private var mp4Session: URLSession!
@@ -105,14 +101,15 @@ class DownloadManager: NSObject, ObservableObject {
         var newItem = DownloadItem(id: downloadId, title: title, sourceURL: url, format: format)
         newItem.status = .pending
         
+        // Add/Update in active downloads *before* starting task to ensure it's tracked
         DispatchQueue.main.async {
             self.activeDownloads[downloadId] = newItem
         }
 
         if format == .hls {
-            startHLSDownload(item: &newItem)
+            startHLSDownload(item: &newItem) // Pass as inout
         } else {
-            startMP4Download(item: &newItem)
+            startMP4Download(item: &newItem) // Pass as inout
         }
     }
 
@@ -146,11 +143,9 @@ class DownloadManager: NSObject, ObservableObject {
         
         do {
              if item.format == .hls {
-                 // Deleting HLS assets is managed by AVFoundation; attempt removal if needed,
-                 // but the primary action is removing the bookmark/reference.
-                 // If 'location' stored is a bookmark, try resolving and removing actual files if possible,
-                 // otherwise, just remove the reference. For simplicity, we just remove the reference.
                  print("Removing HLS reference for \(item.title) at \(urlToDelete.path)")
+                 // For HLS, AVFoundation manages files; removing the bookmark might be enough,
+                 // but actual file deletion is tricky and might require more specific logic.
              } else {
                  try FileManager.default.removeItem(at: urlToDelete)
                  print("Deleted MP4 file at \(urlToDelete.path)")
@@ -160,8 +155,7 @@ class DownloadManager: NSObject, ObservableObject {
                 completedDownloads.remove(at: index)
                 saveCompletedDownloads()
                 DispatchQueue.main.async {
-                    // Force update published property
-                     self.completedDownloads = self.completedDownloads
+                    self.completedDownloads = self.completedDownloads // Force update
                 }
             }
         } catch {
@@ -169,56 +163,79 @@ class DownloadManager: NSObject, ObservableObject {
         }
     }
 
-    // Method to update a completed download item (e.g., after renaming)
      func updateCompletedDownload(item: DownloadItem) {
          if let index = completedDownloads.firstIndex(where: { $0.id == item.id }) {
              completedDownloads[index] = item
              saveCompletedDownloads()
              DispatchQueue.main.async {
-                  // Force update published property
-                 self.completedDownloads = self.completedDownloads
+                 self.completedDownloads = self.completedDownloads // Force update
              }
          }
      }
 
-
-    private func startMP4Download(item: inout DownloadItem) {
-        let task = mp4Session.downloadTask(with: item.sourceURL)
-        item.downloadTaskIdentifier = task.taskIdentifier
-        item.status = .downloading
+    // **FIXED:** Removed 'inout', use local var for modifications before dispatching
+    private func startMP4Download(item originalItem: inout DownloadItem) {
+        let task = mp4Session.downloadTask(with: originalItem.sourceURL)
         
+        // Modify a copy before dispatching
+        var updatedItem = originalItem
+        updatedItem.downloadTaskIdentifier = task.taskIdentifier
+        updatedItem.status = .downloading
+        
+        // Capture the updated copy
+        let itemToUpdate = updatedItem
         DispatchQueue.main.async {
-            self.activeDownloads[item.id] = item
+            self.activeDownloads[itemToUpdate.id] = itemToUpdate
         }
+        
         task.resume()
-        print("Started MP4 download for \(item.title) (Task ID: \(task.taskIdentifier))")
+        print("Started MP4 download for \(updatedItem.title) (Task ID: \(task.taskIdentifier))")
+        
+        // Update the original inout parameter *after* potential modifications
+        // This line is technically optional now if the caller doesn't need the immediate update
+        // but good practice to keep the inout parameter reflecting the change.
+        originalItem = updatedItem
     }
 
-    private func startHLSDownload(item: inout DownloadItem) {
-        let asset = AVURLAsset(url: item.sourceURL)
-        let safeTitle = item.title.replacingOccurrences(of: "[^a-zA-Z0-9_.]", with: "_", options: .regularExpression)
+    // **FIXED:** Removed 'inout', use local var for modifications before dispatching
+    private func startHLSDownload(item originalItem: inout DownloadItem) {
+        let asset = AVURLAsset(url: originalItem.sourceURL)
+        let safeTitle = originalItem.title.replacingOccurrences(of: "[^a-zA-Z0-9_.]", with: "_", options: .regularExpression)
+        
+        // Modify a copy before dispatching or error handling
+        var updatedItem = originalItem
         
         guard let task = hlsSession.makeAssetDownloadTask(asset: asset,
                                                           assetTitle: safeTitle,
                                                           assetArtworkData: nil,
                                                           options: nil) else {
-            print("Failed to create AVAssetDownloadTask for \(item.title)")
-            item.status = .failed
-            item.errorDescription = "Failed to create HLS download task."
+            print("Failed to create AVAssetDownloadTask for \(originalItem.title)")
+            updatedItem.status = .failed
+            updatedItem.errorDescription = "Failed to create HLS download task."
+            
+            // Capture the failed copy
+            let itemToUpdate = updatedItem
             DispatchQueue.main.async {
-                self.activeDownloads[item.id] = item
+                self.activeDownloads[itemToUpdate.id] = itemToUpdate
             }
+            // Update original inout parameter
+            originalItem = updatedItem
             return
         }
         
-        item.downloadTaskIdentifier = task.taskIdentifier
-        item.status = .downloading
+        updatedItem.downloadTaskIdentifier = task.taskIdentifier
+        updatedItem.status = .downloading
         
+        // Capture the downloading copy
+        let itemToUpdate = updatedItem
         DispatchQueue.main.async {
-             self.activeDownloads[item.id] = item
+             self.activeDownloads[itemToUpdate.id] = itemToUpdate
         }
         task.resume()
-        print("Started HLS download for \(item.title) (Task ID: \(task.taskIdentifier))")
+        print("Started HLS download for \(updatedItem.title) (Task ID: \(task.taskIdentifier))")
+
+        // Update original inout parameter
+        originalItem = updatedItem
     }
 
     private func findAndCancelTask(identifier: Int, format: DownloadItem.DownloadFormat) {
@@ -318,7 +335,7 @@ class DownloadManager: NSObject, ObservableObject {
 extension DownloadManager: URLSessionDownloadDelegate {
     
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
-        guard let taskIdentifier = downloadTask.taskIdentifier as Int?, // Use direct taskIdentifier
+        guard let taskIdentifier = downloadTask.taskIdentifier as Int?,
               let downloadId = activeDownloads.first(where: { $0.value.downloadTaskIdentifier == taskIdentifier })?.key,
               var item = activeDownloads[downloadId] else {
             print("Error: Finished download task \(String(describing: downloadTask.taskIdentifier)) not found in active downloads.")
@@ -338,7 +355,7 @@ extension DownloadManager: URLSessionDownloadDelegate {
             item.status = .completed
             item.progress = 1.0
             item.completedFileURL = destinationURL
-            item.downloadTaskIdentifier = nil // Correct assignment
+            item.downloadTaskIdentifier = nil
             
             DispatchQueue.main.async {
                 self.activeDownloads.removeValue(forKey: downloadId)
@@ -354,7 +371,7 @@ extension DownloadManager: URLSessionDownloadDelegate {
             print("Error moving MP4 file for \(item.title): \(error)")
             item.status = .failed
             item.errorDescription = error.localizedDescription
-            item.downloadTaskIdentifier = nil // Correct assignment
+            item.downloadTaskIdentifier = nil
              DispatchQueue.main.async {
                  self.activeDownloads[downloadId] = item
              }
@@ -364,7 +381,7 @@ extension DownloadManager: URLSessionDownloadDelegate {
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
         
         guard totalBytesExpectedToWrite > 0,
-              let taskIdentifier = downloadTask.taskIdentifier as Int?, // Use direct taskIdentifier
+              let taskIdentifier = downloadTask.taskIdentifier as Int?,
               let downloadId = activeDownloads.first(where: { $0.value.downloadTaskIdentifier == taskIdentifier })?.key,
               var item = activeDownloads[downloadId] else {
                   return
@@ -387,7 +404,7 @@ extension DownloadManager: URLSessionDownloadDelegate {
 extension DownloadManager: AVAssetDownloadDelegate {
     
     func urlSession(_ session: URLSession, assetDownloadTask: AVAssetDownloadTask, didFinishDownloadingTo location: URL) {
-        guard let taskIdentifier = assetDownloadTask.taskIdentifier as Int?, // Use direct taskIdentifier
+        guard let taskIdentifier = assetDownloadTask.taskIdentifier as Int?,
               let downloadId = activeDownloads.first(where: { $0.value.downloadTaskIdentifier == taskIdentifier })?.key,
               var item = activeDownloads[downloadId] else {
             print("Error: Finished HLS download task \(String(describing: assetDownloadTask.taskIdentifier)) not found.")
@@ -397,7 +414,7 @@ extension DownloadManager: AVAssetDownloadDelegate {
         item.status = .completed
         item.progress = 1.0
         item.completedFileURL = location
-        item.downloadTaskIdentifier = nil // Correct assignment
+        item.downloadTaskIdentifier = nil
         
         DispatchQueue.main.async {
             self.activeDownloads.removeValue(forKey: downloadId)
@@ -413,7 +430,7 @@ extension DownloadManager: AVAssetDownloadDelegate {
 
     func urlSession(_ session: URLSession, assetDownloadTask: AVAssetDownloadTask, didLoad timeRange: CMTimeRange, totalTimeRangesLoaded: [NSValue], timeRangeExpectedToLoad: CMTimeRange) {
         
-        guard let taskIdentifier = assetDownloadTask.taskIdentifier as Int?, // Use direct taskIdentifier
+        guard let taskIdentifier = assetDownloadTask.taskIdentifier as Int?,
               let downloadId = activeDownloads.first(where: { $0.value.downloadTaskIdentifier == taskIdentifier })?.key,
               var item = activeDownloads[downloadId] else { return }
               
@@ -442,53 +459,50 @@ extension DownloadManager: AVAssetDownloadDelegate {
     }
 }
 
-
 // MARK: - URLSessionTaskDelegate (Common error handling)
 extension DownloadManager: URLSessionTaskDelegate {
     
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-         guard let taskIdentifier = task.taskIdentifier as Int?, // Use direct taskIdentifier
+         guard let taskIdentifier = task.taskIdentifier as Int?,
               let downloadId = activeDownloads.first(where: { $0.value.downloadTaskIdentifier == taskIdentifier })?.key else {
-            // Task not actively tracked or already completed/cancelled
             if error != nil {
                  print("Error for untracked/completed task \(String(describing: task.taskIdentifier)): \(error!.localizedDescription)")
             }
             return
         }
 
-        // Fetch item again inside dispatch block for thread safety
-        DispatchQueue.main.async {
-            guard var item = self.activeDownloads[downloadId] else { return }
+        let originalTaskIdentifier = activeDownloads[downloadId]?.downloadTaskIdentifier
 
-            // Ensure this completion matches the stored identifier, in case of task reuse (less likely with background)
-             guard item.downloadTaskIdentifier == taskIdentifier else {
-                 print("Task completion mismatch for \(taskIdentifier). Current item ID: \(item.downloadTaskIdentifier ?? -1)")
+        DispatchQueue.main.async {
+             guard var currentItem = self.activeDownloads[downloadId] else { return }
+             
+             guard currentItem.downloadTaskIdentifier == originalTaskIdentifier || originalTaskIdentifier != nil else {
+                 print("Task completion mismatch for \(taskIdentifier). Current item ID: \(currentItem.downloadTaskIdentifier ?? -1)")
                  return
              }
             
-            item.downloadTaskIdentifier = nil // Clear ID as task is finishing
+            currentItem.downloadTaskIdentifier = nil
 
             if let error = error {
                 let nsError = error as NSError
                 if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled {
-                     item.status = .cancelled
-                    print("Task \(taskIdentifier) (\(item.title)) was cancelled.")
-                    self.activeDownloads.removeValue(forKey: downloadId) // Remove cancelled
+                     currentItem.status = .cancelled
+                    print("Task \(taskIdentifier) (\(currentItem.title)) was cancelled.")
+                    self.activeDownloads.removeValue(forKey: downloadId)
                 } else {
-                    item.status = .failed
-                    item.errorDescription = error.localizedDescription
-                    print("Task \(taskIdentifier) (\(item.title)) failed: \(error.localizedDescription)")
-                    self.sendNotification(title: "Download Failed", body: "Failed to download \(item.title): \(error.localizedDescription)")
-                    self.activeDownloads[downloadId] = item // Keep failed item in active list
+                    currentItem.status = .failed
+                    currentItem.errorDescription = error.localizedDescription
+                    print("Task \(taskIdentifier) (\(currentItem.title)) failed: \(error.localizedDescription)")
+                    self.sendNotification(title: "Download Failed", body: "Failed to download \(currentItem.title): \(error.localizedDescription)")
+                    self.activeDownloads[downloadId] = currentItem
                 }
             } else {
-                 // If no error, success is handled by specific delegates. Check if status wasn't updated.
-                 if item.status == .downloading || item.status == .pending {
-                     print("Warning: Task \(taskIdentifier) (\(item.title)) completed without error but wasn't marked completed.")
-                     item.status = .failed // Treat as failure if not marked completed
-                     item.errorDescription = "Download finished unexpectedly without completion."
-                     self.activeDownloads[downloadId] = item
-                     self.sendNotification(title: "Download Failed", body: "\(item.title) finished unexpectedly.")
+                 if currentItem.status == .downloading || currentItem.status == .pending {
+                     print("Warning: Task \(taskIdentifier) (\(currentItem.title)) completed without error but wasn't marked completed by specific delegates.")
+                     currentItem.status = .failed
+                     currentItem.errorDescription = "Download finished unexpectedly without completion."
+                     self.activeDownloads[downloadId] = currentItem
+                     self.sendNotification(title: "Download Failed", body: "\(currentItem.title) finished unexpectedly.")
                  }
              }
         }
