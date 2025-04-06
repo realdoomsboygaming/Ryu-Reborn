@@ -22,7 +22,7 @@ class DownloadListViewController: UIViewController {
         return label
     }()
     
-    private var downloads: [DownloadItem] = [] // Use DownloadItem now
+    private var downloads: [DownloadItem] = []
     private let downloadManager = DownloadManager.shared // Use the singleton
     private let refreshControl = UIRefreshControl()
     
@@ -51,10 +51,8 @@ class DownloadListViewController: UIViewController {
         setupRefreshControl()
         updateTitle()
         
-        // Observe changes from DownloadManager
-         NotificationCenter.default.addObserver(self, selector: #selector(handleDownloadListUpdate), name: .downloadCompleted, object: nil)
-         NotificationCenter.default.addObserver(self, selector: #selector(handleDownloadListUpdate), name: .downloadListUpdated, object: nil) // Also observe generic updates if needed
-
+        NotificationCenter.default.addObserver(self, selector: #selector(handleDownloadListUpdate), name: .downloadCompleted, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleDownloadListUpdate), name: .downloadListUpdated, object: nil)
     }
     
      deinit {
@@ -100,7 +98,8 @@ class DownloadListViewController: UIViewController {
         NSLayoutConstraint.activate([
             emptyStateLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             emptyStateLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            emptyStateLabel.leadingAnchor.constraint(equalTo: view.centerXAnchor, constant: -150)
+            emptyStateLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 32), // Adjusted constraints
+            emptyStateLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -32) // Adjusted constraints
         ])
     }
     
@@ -110,14 +109,10 @@ class DownloadListViewController: UIViewController {
             return
         }
         
-        // For iOS 14+, using the 'shareddocuments://' scheme might be unreliable or disallowed.
-        // A more standard way is to just open the URL itself.
         if UIApplication.shared.canOpenURL(documentsURL) {
-             // This usually opens the app's container in Files if the app supports it via Info.plist keys
              UIApplication.shared.open(documentsURL, options: [:]) { success in
                  if !success {
                      print("Failed to open Files app directory")
-                     // Show an alert to the user maybe?
                  }
              }
         } else {
@@ -126,7 +121,6 @@ class DownloadListViewController: UIViewController {
     }
     
     private func loadDownloads() {
-        // Get completed downloads from the manager
         downloads = downloadManager.getCompletedDownloadItems()
         
         tableView.reloadData()
@@ -147,7 +141,6 @@ class DownloadListViewController: UIViewController {
     private func calculateTotalDownloadSize() -> Int64 {
         var totalSize: Int64 = 0
         for downloadItem in downloads {
-             // For MP4, we can get size from the file URL
              if downloadItem.format == .mp4, let fileURL = downloadItem.completedFileURL {
                  do {
                      let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
@@ -156,10 +149,7 @@ class DownloadListViewController: UIViewController {
                      print("Error getting file size for \(downloadItem.title): \(error.localizedDescription)")
                  }
              } else if downloadItem.format == .hls {
-                 // Getting exact HLS size is complex as it's stored internally by AVFoundation.
-                 // We could approximate or store the expected size if available during download.
-                 // For now, let's use the last known expected size or show N/A.
-                 totalSize += downloadItem.totalBytesExpected ?? 0 // Use expected size as approximation
+                 totalSize += downloadItem.totalBytesExpected ?? 0
              }
         }
         return totalSize
@@ -167,24 +157,22 @@ class DownloadListViewController: UIViewController {
     
     private func playDownload(item: DownloadItem) {
          guard let contentURL = item.completedFileURL else {
-             showAlert(title: "Error", message: "Download location not found.")
+             showAlert(title: "Error", message: "Download location not found.") // Use the helper
              return
          }
 
          let player: AVPlayer
          if item.format == .hls {
-             // For HLS, create AVURLAsset directly from the bookmark location URL
              let asset = AVURLAsset(url: contentURL)
              let playerItem = AVPlayerItem(asset: asset)
              player = AVPlayer(playerItem: playerItem)
              print("Playing HLS from asset location: \(contentURL)")
          } else {
-             // For MP4, create player from the file URL
              player = AVPlayer(url: contentURL)
              print("Playing MP4 from file: \(contentURL.path)")
          }
 
-         let playerViewController = NormalPlayer() // Use NormalPlayer if it has custom logic
+         let playerViewController = NormalPlayer()
          playerViewController.player = player
 
          present(playerViewController, animated: true) {
@@ -194,13 +182,17 @@ class DownloadListViewController: UIViewController {
 
     private func deleteDownload(at indexPath: IndexPath) {
         let itemToDelete = downloads[indexPath.row]
-        // Call the manager to delete the item and its file
         downloadManager.deleteCompletedDownload(item: itemToDelete)
-        // The loadDownloads method will be called via notification observer,
-        // or you can call it directly if preferred after deletion.
-        // loadDownloads() // Call loadDownloads directly or rely on notification
+        // The local 'downloads' array and table view will be updated by the notification handler 'handleDownloadListUpdate'
         updateTitle()
-        NotificationCenter.default.post(name: .downloadListUpdated, object: nil) // Ensure UI elsewhere updates
+        // No need to manually remove from 'downloads' array or delete rows here if relying on notification
+    }
+
+    // **FIXED:** Add showAlert helper
+    private func showAlert(title: String, message: String) {
+        let alertController = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        alertController.addAction(UIAlertAction(title: "OK", style: .default, handler: nil))
+        present(alertController, animated: true, completion: nil)
     }
 }
 
@@ -217,7 +209,6 @@ extension DownloadListViewController: UITableViewDataSource, UITableViewDelegate
         let downloadItem = downloads[indexPath.row]
         cell.titleLabel.text = downloadItem.title
         
-        // Display file size
          if downloadItem.format == .mp4, let fileURL = downloadItem.completedFileURL {
              do {
                  let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
@@ -228,25 +219,23 @@ extension DownloadListViewController: UITableViewDataSource, UITableViewDelegate
                  cell.fileSizeLabel.text = "Unknown size"
              }
          } else if downloadItem.format == .hls {
-             // Show estimated size for HLS if available
              if let expectedSize = downloadItem.totalBytesExpected, expectedSize > 0 {
-                 cell.fileSizeLabel.text = ByteCountFormatter.string(fromByteCount: expectedSize, countStyle: .file) + " (Estimated)"
+                 cell.fileSizeLabel.text = ByteCountFormatter.string(fromByteCount: expectedSize, countStyle: .file) + " (Est.)"
              } else {
-                  cell.fileSizeLabel.text = "HLS Stream" // Or "Unknown size"
+                  cell.fileSizeLabel.text = "HLS Stream"
              }
          } else {
              cell.fileSizeLabel.text = "Unknown size"
          }
         
-        // Add context menu interaction
         let interaction = UIContextMenuInteraction(delegate: self)
-        cell.addInteraction(interaction) // Add interaction to the cell itself
+        cell.addInteraction(interaction)
         
         return cell
     }
     
     func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
-        return 80 // Maintain previous height or adjust as needed
+        return 80
     }
     
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
@@ -255,7 +244,6 @@ extension DownloadListViewController: UITableViewDataSource, UITableViewDelegate
     }
 }
 
-// Add UIContextMenuInteractionDelegate extension
 extension DownloadListViewController: UIContextMenuInteractionDelegate {
     func contextMenuInteraction(_ interaction: UIContextMenuInteraction, configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
         let locationInTableView = interaction.location(in: tableView)
@@ -270,17 +258,24 @@ extension DownloadListViewController: UIContextMenuInteractionDelegate {
                 self.deleteDownload(at: indexPath)
             }
             
-            let renameAction = UIAction(title: "Rename", image: UIImage(systemName: "pencil")) { _ in
-                self.renameDownload(at: indexPath)
+            var children: [UIMenuElement] = [deleteAction]
+            
+            // Allow rename only for MP4
+            if downloadItem.format == .mp4 {
+                let renameAction = UIAction(title: "Rename", image: UIImage(systemName: "pencil")) { _ in
+                    self.renameDownload(at: indexPath)
+                }
+                children.insert(renameAction, at: 0) // Add Rename before Delete
             }
             
-            // Add share action only if it's a file we can directly share (MP4)
-             var children = [renameAction, deleteAction]
+             // Add share action only for MP4
              if downloadItem.format == .mp4, let fileURL = downloadItem.completedFileURL {
                  let shareAction = UIAction(title: "Share", image: UIImage(systemName: "square.and.arrow.up")) { _ in
                      self.shareDownload(url: fileURL)
                  }
-                 children.insert(shareAction, at: 0) // Add Share at the beginning
+                 // Insert share after rename (if present) or at the beginning
+                 let shareIndex = children.contains(where: { $0.title == "Rename" }) ? 1 : 0
+                 children.insert(shareAction, at: shareIndex)
              }
             
             return UIMenu(title: "", children: children)
@@ -306,7 +301,6 @@ extension DownloadListViewController: UIContextMenuInteractionDelegate {
     private func renameDownload(at indexPath: IndexPath) {
         let downloadItem = downloads[indexPath.row]
         
-        // Cannot easily rename HLS downloads managed by AVFoundation
          guard downloadItem.format == .mp4, let oldURL = downloadItem.completedFileURL else {
              showAlert(title: "Rename Not Supported", message: "Renaming is currently only supported for MP4 downloads.")
              return
@@ -329,20 +323,19 @@ extension DownloadListViewController: UIContextMenuInteractionDelegate {
             
             do {
                 try FileManager.default.moveItem(at: oldURL, to: newURL)
-                // Update the DownloadItem's URL and potentially title if needed
+                
+                 // Update the item in the manager's list
                  var updatedItem = downloadItem
                  updatedItem.completedFileURL = newURL
-                 // Maybe update title too?
-                 // updatedItem.title = newName // Or keep original title? Decide based on UX preference.
+                 // Optionally update title if needed
+                 // updatedItem.title = newName
 
-                // Update the data source array
-                 self.downloads[indexPath.row] = updatedItem
-                 self.downloadManager.completedDownloads[indexPath.row] = updatedItem // Update manager's array
-                 self.downloadManager.saveCompletedDownloads() // Persist the change
+                 self.downloadManager.updateCompletedDownload(item: updatedItem) // Use manager method
                 
-                // Reload the specific row
-                self.tableView.reloadRows(at: [indexPath], with: .automatic)
-                self.updateTitle() // Update total size display
+                // Reload local data and UI
+                self.loadDownloads()
+                // self.tableView.reloadRows(at: [indexPath], with: .automatic) // Reloading all data is simpler now
+                self.updateTitle()
             } catch {
                 print("Error renaming file: \(error.localizedDescription)")
                  self.showAlert(title: "Rename Failed", message: "Could not rename the file: \(error.localizedDescription)")
@@ -357,7 +350,6 @@ extension DownloadListViewController: UIContextMenuInteractionDelegate {
     
      private func shareDownload(url: URL) {
          let activityViewController = UIActivityViewController(activityItems: [url], applicationActivities: nil)
-         // Prevent anchoring issues on iPad
          if let popoverController = activityViewController.popoverPresentationController {
              popoverController.sourceView = self.view
              popoverController.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 0, height: 0)
