@@ -322,11 +322,11 @@ class ExternalVideoPlayer: UIViewController, WKNavigationDelegate, CustomPlayerV
         let downloadManager = DownloadManager.shared
         let title = self.animeDetailsViewController?.animeTitle ?? "Anime Download"
         
-        downloadManager.startDownload(url: url, title: title, progress: { progress in
+        downloadManager.startDownload(url: url, title: title, priority: .normal) { progress in
             DispatchQueue.main.async {
                 print("Download progress: \(progress * 100)%")
             }
-        }) { [weak self] result in
+        } { [weak self] result in
             DispatchQueue.main.async {
                 switch result {
                 case .success(let downloadURL):

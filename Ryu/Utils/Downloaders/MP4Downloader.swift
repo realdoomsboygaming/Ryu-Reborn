@@ -30,9 +30,9 @@ class MP4Downloader {
             content.title = "Download Complete"
             content.body = "Your Episode download has completed, you can now start watching it!"
             content.sound = .default
-        case .failure:
+        case .failure(let error):
             content.title = "Download Failed"
-            content.body = "There was an error downloading the episode :("
+            content.body = "There was an error downloading the episode: \(error.localizedDescription)"
             content.sound = .defaultCritical
         }
         
@@ -66,46 +66,77 @@ class BackgroundSessionDelegate: NSObject, URLSessionDelegate, URLSessionDownloa
     static let shared = BackgroundSessionDelegate()
     var downloadCompletionHandler: ((Result<URL, Error>) -> Void)?
     
+    private var downloadProgress: [String: (bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64)] = [:]
+    private let progressQueue = DispatchQueue(label: "com.ryu.downloadmanager.progress")
+    
     func urlSession(_ session: URLSession, didBecomeInvalidWithError error: Error?) {
         if let error = error {
             print("Session became invalid: \(error.localizedDescription)")
-        }
-    }
-    
-    func urlSession(_ session: URLSession, didCompleteWithError error: Error?) {
-        if let error = error {
-            print("Download eror: \(error.localizedDescription)")
-            downloadCompletionHandler?(.failure(error))
-        } else {
-            print("All good yay")
+            if let taskId = session.configuration.identifier?.replacingOccurrences(of: "me.cranci.downloader.", with: "") {
+                downloadCompletionHandler?(.failure(error))
+            }
         }
     }
     
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
-        var originalFileName = downloadTask.originalRequest?.url?.lastPathComponent ?? "downloadedFile.mp4"
-        
-        if !originalFileName.contains(".") {
-            originalFileName += ".mp4"
-        } else if originalFileName.hasSuffix(".php") {
-            originalFileName = originalFileName.replacingOccurrences(of: ".php", with: ".mp4")
+        guard let taskId = session.configuration.identifier?.replacingOccurrences(of: "me.cranci.downloader.", with: "") else {
+            downloadCompletionHandler?(.failure(NSError(domain: "DownloadManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid download task"])))
+            return
         }
         
-        let documentsDirectoryURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        let destinationFileUrl = MP4Downloader.getUniqueFileURL(for: originalFileName, in: documentsDirectoryURL)
-        
         do {
-            try FileManager.default.copyItem(at: location, to: destinationFileUrl)
-            print("File copied to: \(destinationFileUrl.path)")
-            downloadCompletionHandler?(.success(destinationFileUrl))
+            // Create destination directory if it doesn't exist
+            try FileManager.default.createDirectory(at: metadata.destinationURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            
+            // Remove existing file if it exists
+            if FileManager.default.fileExists(atPath: metadata.destinationURL.path) {
+                try FileManager.default.removeItem(at: metadata.destinationURL)
+            }
+            
+            // Move downloaded file to destination
+            try FileManager.default.moveItem(at: location, to: metadata.destinationURL)
+            
+            // Update file size in metadata
+            let attributes = try FileManager.default.attributesOfItem(atPath: metadata.destinationURL.path)
+            let fileSize = attributes[.size] as? Int64
+            
+            downloadCompletionHandler?(.success(metadata.destinationURL))
+            
+            // Post notification for download completion
+            NotificationCenter.default.post(name: .downloadCompleted, object: nil, userInfo: [
+                "id": taskId,
+                "title": metadata.title,
+                "url": metadata.destinationURL
+            ])
+            
         } catch {
-            print("Error copying file: \(error.localizedDescription)")
+            print("Error handling downloaded file: \(error.localizedDescription)")
             downloadCompletionHandler?(.failure(error))
+        }
+    }
+    
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
+        guard let taskId = session.configuration.identifier?.replacingOccurrences(of: "me.cranci.downloader.", with: "") else { return }
+        
+        progressQueue.async { [weak self] in
+            self?.downloadProgress[taskId] = (bytesWritten, totalBytesWritten, totalBytesExpectedToWrite)
         }
     }
     
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         if let error = error {
             print("Task completed with error: \(error.localizedDescription)")
+            if let taskId = session.configuration.identifier?.replacingOccurrences(of: "me.cranci.downloader.", with: "") {
+                downloadCompletionHandler?(.failure(error))
+            }
         }
+    }
+    
+    func getDownloadProgress(for taskId: String) -> (bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64)? {
+        var progress: (bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64)?
+        progressQueue.sync {
+            progress = downloadProgress[taskId]
+        }
+        return progress
     }
 }

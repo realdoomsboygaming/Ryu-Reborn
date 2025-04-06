@@ -8,6 +8,7 @@
 import UIKit
 import AVKit
 import AVFoundation
+import Combine
 
 class DownloadListViewController: UIViewController {
     private let tableView: UITableView = {
@@ -20,7 +21,7 @@ class DownloadListViewController: UIViewController {
     
     private let emptyStateLabel: UILabel = {
         let label = UILabel()
-        label.font = UIFont.systemFont(ofSize: 18, weight: .medium)
+        label.font = .systemFont(ofSize: 18, weight: .medium)
         label.textColor = .secondaryLabel
         label.textAlignment = .center
         label.numberOfLines = 0
@@ -30,8 +31,9 @@ class DownloadListViewController: UIViewController {
     }()
     
     private var downloads: [URL] = []
-    private let downloadManager = DownloadManager()
+    private let downloadManager = DownloadManager.shared
     private let refreshControl = UIRefreshControl()
+    private var cancellables = Set<AnyCancellable>()
     
     private let emptyMessages = [
         "Looks like a black hole has been here! No downloads found. Maybe they've been sucked into oblivion?",
@@ -43,59 +45,56 @@ class DownloadListViewController: UIViewController {
         "Looks like the downloads took a vacation. Check back later!",
         "Downloads? What downloads? It's all an illusion!",
         "Looks like the downloads decided to play hide and seek!",
-        "No downloads available. It’s like they’ve gone off to a secret party.",
+        "No downloads available. It's like they've gone off to a secret party.",
         "Nothing here. Maybe the downloads are waiting for a dramatic entrance."
     ]
     
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
-        
+        setupViews()
         setupTableView()
-        setupEmptyStateLabel()
+        setupNotifications()
         loadDownloads()
-        setupNavigationBar()
-        setupRefreshControl()
-        updateTitle()
     }
     
-    private func setupRefreshControl() {
-        refreshControl.addTarget(self, action: #selector(refreshData), for: .valueChanged)
-        tableView.refreshControl = refreshControl
-    }
-    
-    @objc private func refreshData() {
-        loadDownloads()
-        refreshControl.endRefreshing()
-    }
-    
-    private func setupNavigationBar() {
-        let filesButton = UIBarButtonItem(image: UIImage(systemName: "folder"), style: .plain, target: self, action: #selector(openInFilesApp))
-        navigationItem.rightBarButtonItem = filesButton
-    }
-    
-    private func setupTableView() {
+    private func setupViews() {
         view.addSubview(tableView)
-        tableView.dataSource = self
-        tableView.delegate = self
-        tableView.backgroundColor = .systemBackground
-        tableView.register(DownloadCell.self, forCellReuseIdentifier: "DownloadCell")
+        view.addSubview(emptyStateLabel)
         
         NSLayoutConstraint.activate([
             tableView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+            tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            
+            emptyStateLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            emptyStateLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            emptyStateLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 32),
+            emptyStateLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -32)
         ])
     }
     
-    private func setupEmptyStateLabel() {
-        view.addSubview(emptyStateLabel)
-        NSLayoutConstraint.activate([
-            emptyStateLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            emptyStateLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            emptyStateLabel.leadingAnchor.constraint(equalTo: view.centerXAnchor, constant: -150)
-        ])
+    private func setupTableView() {
+        tableView.dataSource = self
+        tableView.delegate = self
+        tableView.register(DownloadCell.self, forCellReuseIdentifier: "DownloadCell")
+        
+        refreshControl.addTarget(self, action: #selector(refreshDownloads), for: .valueChanged)
+        tableView.refreshControl = refreshControl
+    }
+    
+    private func setupNotifications() {
+        NotificationCenter.default.publisher(for: .downloadListUpdated)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.loadDownloads()
+            }
+            .store(in: &cancellables)
+    }
+    
+    @objc private func refreshDownloads() {
+        loadDownloads()
+        refreshControl.endRefreshing()
     }
     
     @objc private func openInFilesApp() {
@@ -123,23 +122,31 @@ class DownloadListViewController: UIViewController {
     }
     
     private func loadDownloads() {
-        downloads = downloadManager.fetchDownloadURLs().sorted { (url1, url2) -> Bool in
-            return url1.lastPathComponent.localizedStandardCompare(url2.lastPathComponent) == .orderedAscending
-        }
+        let fileManager = FileManager.default
+        let downloadsDirectory = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("Downloads")
         
-        tableView.reloadData()
-        emptyStateLabel.isHidden = !downloads.isEmpty
-        updateTitle()
-        
-        if downloads.isEmpty {
-            emptyStateLabel.text = emptyMessages.randomElement()
+        do {
+            let fileURLs = try fileManager.contentsOfDirectory(at: downloadsDirectory, includingPropertiesForKeys: nil)
+            downloads = fileURLs.filter { $0.pathExtension.lowercased() == "mp4" }
+                .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+            
+            tableView.reloadData()
+            emptyStateLabel.isHidden = !downloads.isEmpty
+            updateTitle()
+            
+            if downloads.isEmpty {
+                emptyStateLabel.text = emptyMessages.randomElement()
+            }
+        } catch {
+            print("Error loading downloads: \(error.localizedDescription)")
+            showAlert(title: "Error", message: "Failed to load downloads: \(error.localizedDescription)")
         }
     }
     
     private func updateTitle() {
         let totalSize = calculateTotalDownloadSize()
         let formattedSize = ByteCountFormatter.string(fromByteCount: totalSize, countStyle: .file)
-        title = "Downloaded - \(formattedSize)"
+        title = "Downloads (\(formattedSize))"
     }
     
     private func calculateTotalDownloadSize() -> Int64 {
@@ -158,7 +165,7 @@ class DownloadListViewController: UIViewController {
     
     private func playDownload(url: URL) {
         guard url.pathExtension.lowercased() == "mp4" else {
-            print("Error: File is not supported yet.")
+            showAlert(title: "Error", message: "This file type is not supported yet.")
             return
         }
         
@@ -166,7 +173,6 @@ class DownloadListViewController: UIViewController {
         let playerItem = AVPlayerItem(asset: asset)
         
         let player = AVPlayer(playerItem: playerItem)
-        print("\(url)")
         
         let playerViewController = NormalPlayer()
         playerViewController.player = player
@@ -188,7 +194,14 @@ class DownloadListViewController: UIViewController {
             NotificationCenter.default.post(name: .downloadListUpdated, object: nil)
         } catch {
             print("Error deleting file: \(error.localizedDescription)")
+            showAlert(title: "Error", message: "Failed to delete file: \(error.localizedDescription)")
         }
+    }
+    
+    private func showAlert(title: String, message: String) {
+        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
     }
 }
 
@@ -225,6 +238,7 @@ extension DownloadListViewController: UITableViewDataSource, UITableViewDelegate
     }
     
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        tableView.deselectRow(at: indexPath, animated: true)
         let download = downloads[indexPath.row]
         playDownload(url: download)
     }
@@ -232,70 +246,62 @@ extension DownloadListViewController: UITableViewDataSource, UITableViewDelegate
 
 extension DownloadListViewController: UIContextMenuInteractionDelegate {
     func contextMenuInteraction(_ interaction: UIContextMenuInteraction, configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
-        let locationInTableView = interaction.location(in: tableView)
-        guard let indexPath = tableView.indexPathForRow(at: locationInTableView) else {
-            return nil
-        }
+        guard let cell = interaction.view as? DownloadCell,
+              let indexPath = tableView.indexPath(for: cell) else { return nil }
         
-        return UIContextMenuConfiguration(identifier: indexPath as NSCopying, previewProvider: nil) { _ in
-            let deleteAction = UIAction(title: "Delete", image: UIImage(systemName: "trash"), attributes: .destructive) { _ in
-                self.deleteDownload(at: indexPath)
+        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
+            let deleteAction = UIAction(title: "Delete", image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in
+                self?.deleteDownload(at: indexPath)
             }
             
-            let renameAction = UIAction(title: "Rename", image: UIImage(systemName: "pencil")) { _ in
-                self.renameDownload(at: indexPath)
+            let openInFilesAction = UIAction(title: "Open in Files", image: UIImage(systemName: "folder")) { [weak self] _ in
+                self?.openInFilesApp()
             }
             
-            return UIMenu(title: "", children: [renameAction, deleteAction])
+            return UIMenu(children: [deleteAction, openInFilesAction])
         }
     }
+}
+
+class DownloadCell: UITableViewCell {
+    let titleLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 16, weight: .medium)
+        label.textColor = .label
+        label.translatesAutoresizingMaskIntoConstraints = false
+        return label
+    }()
     
-    func contextMenuInteraction(_ interaction: UIContextMenuInteraction, previewForHighlightingMenuWithConfiguration configuration: UIContextMenuConfiguration) -> UITargetedPreview? {
-        guard let indexPath = configuration.identifier as? IndexPath,
-              let cell = tableView.cellForRow(at: indexPath) else {
-                  return nil
-              }
-        return UITargetedPreview(view: cell)
+    let fileSizeLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 14)
+        label.textColor = .secondaryLabel
+        label.translatesAutoresizingMaskIntoConstraints = false
+        return label
+    }()
+    
+    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+        super.init(style: style, reuseIdentifier: reuseIdentifier)
+        setupViews()
     }
     
-    func contextMenuInteraction(_ interaction: UIContextMenuInteraction, previewForDismissingMenuWithConfiguration configuration: UIContextMenuConfiguration) -> UITargetedPreview? {
-        guard let indexPath = configuration.identifier as? IndexPath,
-              let cell = tableView.cellForRow(at: indexPath) else {
-                  return nil
-              }
-        return UITargetedPreview(view: cell)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
     }
     
-    private func renameDownload(at indexPath: IndexPath) {
-        let download = downloads[indexPath.row]
-        let alertController = UIAlertController(title: "Rename File", message: nil, preferredStyle: .alert)
+    private func setupViews() {
+        contentView.addSubview(titleLabel)
+        contentView.addSubview(fileSizeLabel)
         
-        alertController.addTextField { textField in
-            textField.text = (download.lastPathComponent as NSString).deletingPathExtension
-        }
-        
-        let cancelAction = UIAlertAction(title: "Cancel", style: .cancel, handler: nil)
-        let renameAction = UIAlertAction(title: "Rename", style: .default) { [weak self] _ in
-            guard let newName = alertController.textFields?.first?.text,
-                  !newName.isEmpty,
-                  let self = self else { return }
+        NSLayoutConstraint.activate([
+            titleLabel.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
+            titleLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+            titleLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
             
-            let fileExtension = download.pathExtension
-            let newURL = download.deletingLastPathComponent().appendingPathComponent(newName).appendingPathExtension(fileExtension)
-            
-            do {
-                try FileManager.default.moveItem(at: download, to: newURL)
-                self.downloads[indexPath.row] = newURL
-                self.loadDownloads()
-                self.tableView.reloadRows(at: [indexPath], with: .automatic)
-            } catch {
-                print("Error renaming file: \(error.localizedDescription)")
-            }
-        }
-        
-        alertController.addAction(cancelAction)
-        alertController.addAction(renameAction)
-        
-        present(alertController, animated: true, completion: nil)
+            fileSizeLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 4),
+            fileSizeLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+            fileSizeLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
+            fileSizeLabel.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -12)
+        ])
     }
 }
