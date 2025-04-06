@@ -2,7 +2,7 @@ name: Build and Release IPA for 2.0
 on:
   push:
     branches:
-      - Fork
+      - ewaewa
 jobs:
   build:
     name: Build IPA
