@@ -1,10 +1,10 @@
-// Ryu/Utils/Player/Sources/GoGoAnime/ExternalVideoPlayerGoGo1.swift
 import AVKit
 import WebKit
 import Combine
 import GoogleCast
 
-class ExternalVideoPlayer: UIViewController, WKNavigationDelegate, CustomPlayerViewDelegate {
+// Remove WKNavigationDelegate from here, it's added in the extension below
+class ExternalVideoPlayer: UIViewController, CustomPlayerViewDelegate {
     func customPlayerViewDidDismiss() {
         self.dismiss(animated: true, completion: nil)
     }
@@ -264,6 +264,10 @@ class ExternalVideoPlayer: UIViewController, WKNavigationDelegate, CustomPlayerV
                 }
             }))
         }
+
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel, handler: { [weak self] _ in
+            self?.dismiss(animated: true, completion: nil) // Dismiss if cancelled
+        }))
         
         if UIDevice.current.userInterfaceIdiom == .pad {
             if let popoverController = alert.popoverPresentationController {
@@ -318,9 +322,9 @@ class ExternalVideoPlayer: UIViewController, WKNavigationDelegate, CustomPlayerV
         let downloadManager = DownloadManager.shared
         let title = self.animeDetailsViewController?.animeTitle ?? "Anime Download"
         
+        // **FIXED:** Removed progress and completion closures
         downloadManager.startDownload(url: url, title: title)
         
-        // Show confirmation to the user
         self.animeDetailsViewController?.showAlert(withTitle: "Download Started", message: "Check the Downloads tab for progress.")
     }
     
@@ -348,7 +352,7 @@ class ExternalVideoPlayer: UIViewController, WKNavigationDelegate, CustomPlayerV
             }
             
             let builder = GCKMediaInformationBuilder(contentURL: videoURL)
-            builder.contentType = "video/mp4" // Assuming MP4 from GoGoAnime download links
+            builder.contentType = "video/mp4"
             builder.metadata = metadata
             
             let streamTypeString = UserDefaults.standard.string(forKey: "castStreamingType") ?? "buffered"
@@ -538,7 +542,10 @@ class ExternalVideoPlayer: UIViewController, WKNavigationDelegate, CustomPlayerV
         stopExtractionProcess()
         
         if let timeObserverToken = timeObserverToken {
-            player?.removeTimeObserver(timeObserverToken)
+            // Ensure player exists before removing observer
+            if let player = self.player {
+                 player.removeTimeObserver(timeObserverToken)
+            }
             self.timeObserverToken = nil
         }
         
@@ -552,7 +559,7 @@ class ExternalVideoPlayer: UIViewController, WKNavigationDelegate, CustomPlayerV
     }
 }
 
-// Required WKNavigationDelegate methods (can be empty if not needed for other logic)
+// Keep only one WKNavigationDelegate extension
 extension ExternalVideoPlayer: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         // Optional: Could try extracting links here if the timer approach fails
