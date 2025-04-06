@@ -1,150 +1,165 @@
-# Ryu
+<div align="center">
 
-<div align="center"> 
+<img src="https://raw.githubusercontent.com/realdoomsboygaming/Ryu-Reborn/main/Ryu/Assets.xcassets/AppIcon.appiconset/1024.jpg" width="240px">
 
-<img src="https://raw.githubusercontent.com/cranci1/Ryu/main/Ryu/Assets.xcassets/AppIcon.appiconset/1024.jpg" width="240px">
+# Ryu Revamped
 
-[![Build and Release IPA](https://github.com/cranci1/Ryu/actions/workflows/build.yml/badge.svg)](https://github.com/cranci1/Ryu/actions/workflows/build.yml) [![Platform](https://img.shields.io/badge/Platform-iOS%20%7C%20iPadOS%2014.0%2B-orange?logo=apple&logoColor=white)](https://img.shields.io/badge/Platform-iOS%20%7C%20iPadOS%2014.0%2B-red?logo=apple&logoColor=white) [![Commit](https://custom-icon-badges.demolab.com/github/last-commit/cranci1/Ryu)](https://custom-icon-badges.demolab.com/github/last-commit/cranci1/Ryu) [![Version](https://custom-icon-badges.demolab.com/github/v/release/cranci1/Ryu)](https://custom-icon-badges.demolab.com/github/v/release/cranci1/Ryu) [![Testflight](https://img.shields.io/badge/Join-Testflight-008080)](https://testflight.apple.com/join/Sxyg9JXF) [![Discord](https://img.shields.io/discord/1293430817841741899.svg?logo=discord&color=blue)](https://discord.gg/XR3SrmUbpd)
+**Your free, ad-free gateway to anime on iOS & iPadOS.**
 
-A simple way to enjoy and watch anime on iOS
+[![Build and Release IPA](https://github.com/realdoomsboygaming/Ryu-Reborn/actions/workflows/build.yml/badge.svg)](https://github.com/realdoomsboygaming/Ryu-Reborn/actions/workflows/build.yml) [![Platform](https://img.shields.io/badge/Platform-iOS%20%7C%20iPadOS%2014.0%2B-orange?logo=apple&logoColor=white)](https://img.shields.io/badge/Platform-iOS%20%7C%20iPadOS%2014.0%2B-red?logo=apple&logoColor=white) [![Commit](https://custom-icon-badges.demolab.com/github/last-commit/realdoomsboygaming/Ryu-Reborn)](https://custom-icon-badges.demolab.com/github/last-commit/realdoomsboygaming/Ryu-Reborn) [![Version](https://custom-icon-badges.demolab.com/github/v/release/realdoomsboygaming/Ryu-Reborn)](https://custom-icon-badges.demolab.com/github/v/release/realdoomsboygaming/Ryu-Reborn)
 
 </div>
 
+Ryu Revamped offers a simple and clean way to watch your favorite anime directly on your iPhone or iPad, without ads or logins.
+
 ## Table of Contents
 
-- [Features](#features)
-- [Sources](#sources)
-- [Compatibility](#compatibility)
+- [Key Features](#key-features)
+- [How Ryu Revamped Works (Sources)](#how-ryu-revamped-works-sources)
+- [Supported Sources](#supported-sources)
+- [Device Compatibility](#device-compatibility)
+- [Installation](#installation)
 - [Frequently Asked Questions](#frequently-asked-questions)
 - [Acknowledgements](#acknowledgements)
 - [Contributing](#contributing)
 - [License](#license)
-- [Legal](#legal)
+- [Legal Disclaimer](#legal-disclaimer)
 
-## Features
+## Key Features
 
-- [x] Ads Free and no logins
-- [x] Streaming & Download support
-- [x] Third-party anime services push updates (AniList.co)
-- [x] Background playback and Picture-in-Picture (PiP) support
-- [x] Library system
-- [x] Multi-source support with different languages
-- [x] Google Cast support
-- [x] Backup system (import/export)
-- [x] Offline mode (ongoing improvements)
-- [x] Apple KeyChain support for the AniList/Kitsu Token
-- [x] External Media Player support (VLC, Infuse, OutPlayer, nPlayer)
-- [x] Intro/Outro skipper with timestamps
-- [x] Real-time subtitles translator
-- [x] Notifications for new episodes
-- [ ] macOS support
+Enjoy a seamless anime viewing experience with:
 
-## Sources
+-   ✅ **Completely Free & Ad-Free:** No hidden costs, subscriptions, or annoying ads.
+-   ✅ **No Login Required:** Just install and start watching.
+-   ✅ **Streaming & Downloading:** Watch online or download episodes for offline viewing.
+-   ✅ **AniList Integration:** Keep track of your watch progress automatically. (Kitsu support planned)
+-   ✅ **Library Management:** Organize your favorite anime easily.
+-   ✅ **Background Playback & PiP:** Continue watching while using other apps or with your screen off.
+-   ✅ **Multiple Sources & Languages:** Access anime from various providers in different languages.
+-   ✅ **Google Cast Support:** Stream anime to your Chromecast-enabled devices.
+-   ✅ **Backup & Restore:** Easily save and load your library and settings.
+-   ✅ **Offline Mode:** Access downloaded content without an internet connection (continuously improving).
+-   ✅ **Keychain Support:** Securely stores your AniList/Kitsu token.
+-   ✅ **External Player Support:** Watch using VLC, Infuse, OutPlayer, nPlayer, and more.
+-   ✅ **Intro/Outro Skipping:** Uses community-sourced timestamps to skip openings and endings.
+-   ✅ **Real-time Subtitle Translation:** Translate subtitles on the fly.
+-   ✅ **New Episode Notifications:** Get notified when new episodes are available for tracked series.
 
-| Source       | Language   | Working| Search | Streaming| Download |
-| ------------ | ---------- | ------ | ------ | -------- | -------- |
-| AnimeWorld   | Italian    |   ✅   |   ✅   |    ✅    |    ✅   |
-| GoGoAnime    | English    |   ⚠️   |   ✅   |    ✅    |    ✅   |
-| AnimeHeaven  | English    |   ✅   |   ✅   |    ✅    |    ✅   |
-| AnimeFire    | Portuguese |   ✅   |   ✅   |    ✅    |    ✅   |
-| Kuramanime   | Indonesian |   ✅   |   ✅   |    ✅    |    ✅   |
-| Anime3rb     | Arabic     |   ✅   |   ✅   |    ✅    |    ✅   |
-| HiAnime      | English    |   ✅   |   ✅   |    ✅    |    :x:  |
-| Anilibria    | Russian    |   ✅   |   ✅   |    ✅    |    :x:  |
-| AnimeSRBIJA  | Croatian   |   ✅   |   ✅   |    ✅    |    ✅   |
-| AniWorld     | German     |   ✅   |   ✅   |    ✅    |    :x:  |
-| TokyoInsider | English    |   ✅   |   ✅   |    ✅    |    ✅   |
-| AniVibe      | English    |   ✅   |   ✅   |    ✅    |    :x:  |
-| AnimeUnity   | Italian    |   ✅   |   ✅   |    ✅    |    ✅   |
-| AnimeFLV     | Spanish    |   ✅   |   ✅   |    ✅    |    ✅   |
-| AnimeBalkan  | Croatian   |   ✅   |   ✅   |    ✅    |    ✅   | 
-| AniBunker    | Portuguese |   ✅   |   ✅   |    ✅    |    ✅   |
+## How Ryu Revamped Works (Sources)
 
-> Note that some Sources are region blocked:
-> AnimeFire: Brazil and Protugal 
-> Kuramanime: Indionesia
+Ryu Revamped doesn't host any anime itself. Instead, it acts as a client that fetches anime information and video streams from various publicly available third-party websites (called "Sources"). This allows you to access a wide range of anime in one app.
 
-## Compatibility
+## Supported Sources
 
-- iOS/iPadOS 14.0 or later
-- M-series Macs via TestFlight
+Here's a list of the websites Ryu Revamped can currently fetch anime from:
+
+| Source       | Language   | Status | Search | Streaming | Download | Notes                               |
+| :----------- | :--------- | :----: | :----: | :-------: | :------: | :---------------------------------- |
+| AnimeWorld   | Italian    |   ✅   |   ✅   |     ✅    |    ✅    |                                     |
+| GoGoAnime    | English    |   ⚠️   |   ✅   |     ✅    |    ✅    | May experience occasional issues    |
+| AnimeHeaven  | English    |   ✅   |   ✅   |     ✅    |    ✅    |                                     |
+| AnimeFire    | Portuguese |   ✅   |   ✅   |     ✅    |    ✅    | **Region-blocked** (Brazil/Portugal)|
+| Kuramanime   | Indonesian |   ✅   |   ✅   |     ✅    |    ✅    | **Region-blocked** (Indonesia)      |
+| Anime3rb     | Arabic     |   ✅   |   ✅   |     ✅    |    ✅    |                                     |
+| HiAnime      | English    |   ✅   |   ✅   |     ✅    |    ❌    |                                     |
+| Anilibria    | Russian    |   ✅   |   ✅   |     ✅    |    ❌    |                                     |
+| AnimeSRBIJA  | Croatian   |   ✅   |   ✅   |     ✅    |    ✅    |                                     |
+| AniWorld     | German     |   ✅   |   ✅   |     ✅    |    ❌    |                                     |
+| TokyoInsider | English    |   ✅   |   ✅   |     ✅    |    ✅    |                                     |
+| AniVibe      | English    |   ✅   |   ✅   |     ✅    |    ❌    |                                     |
+| AnimeUnity   | Italian    |   ✅   |   ✅   |     ✅    |    ✅    |                                     |
+| AnimeFLV     | Spanish    |   ✅   |   ✅   |     ✅    |    ✅    |                                     |
+| AnimeBalkan  | Croatian   |   ✅   |   ✅   |     ✅    |    ✅    |                                     |
+| AniBunker    | Portuguese |   ✅   |   ✅   |     ✅    |    ✅    |                                     |
+
+**Legend:**
+*   ✅: Working
+*   ⚠️: Working with potential issues
+*   ❌: Not Supported
+
+**Important:** Some sources might be blocked in certain regions. Use a VPN if you encounter access issues.
+
+## Device Compatibility
+
+-   **iOS / iPadOS:** Requires version 14.0 or later.
 
 ## Frequently Asked Questions
 
-1. **What is Ryu?**
-   - Ryu is a free, ad-free anime streaming app for iOS and iPadOS.
+1.  **What is Ryu Revamped?**
+    *   Ryu Revamped is a free, open-source app for iOS/iPadOS that lets you stream and download anime from various online sources without ads.
 
-2. **Is Ryu legal?**
-   - While using Ryu may not directly break laws, please check your local regulations regarding streaming content.
+2.  **Is using Ryu Revamped legal?**
+    *   The app itself is legal software. However, accessing copyrighted content through the sources might infringe on copyright laws depending on your country's regulations. Please be aware of your local laws.
 
-3. **Will Ryu be on the App Store?**
-   - There are no plans for an App Store release, but Ryu is available on TestFlight.
+3.  **Will Ryu Revamped be on the App Store?**
+    *   No, due to App Store guidelines, there are no plans for an official App Store release.
 
-4. **Is Ryu safe?**
-   - Yes, Ryu is open-source and does not store user data on external servers.
+4.  **Is Ryu Revamped safe to use?**
+    *   Yes. The app is open-source (available at [https://github.com/realdoomsboygaming/Ryu-Reborn/](https://github.com/realdoomsboygaming/Ryu-Reborn/)), meaning anyone can inspect the code. It doesn't collect personal data or connect to external servers (except for fetching anime data from the sources and interacting with AniList).
 
-5. **Will Ryu ever be paid?**
-   - No, Ryu will always remain free without subscriptions, paid content, or any type of login.
-
-6. **Why is the name on TestFlight AnimeGen?**
-   - To be isntalled via TestFlight, Ryu shares the same TestFlight as another app made by me, AnimeGen. Rest assured, you will be installing Ryu, not AnimeGen.
+5.  **Will Ryu Revamped ever cost money or have ads?**
+    *   No. Ryu Revamped is committed to being free, ad-free, and without any paid features or required logins, forever.
 
 ## Acknowledgements
 
-Ryu contains code from the following open-source projects:
+Ryu Revamped builds upon the original Ryu and wouldn't be possible without the amazing work from these open-source projects and APIs:
 
-Apps:
-- [NineAnimator](https://github.com/SuperMarcus/NineAnimator) - GPLv3.0 License
+**Original Project & Inspirations:**
+*   Original Ryu by cranci1 ([https://github.com/cranci1/Ryu](https://github.com/cranci1/Ryu))
+*   [NineAnimator](https://github.com/SuperMarcus/NineAnimator) (GPLv3.0 License)
 
-FrameWorks:
-- [SwiftSoup](https://github.com/scinfu/SwiftSoup) - MIT License
-- [KingFisher](https://github.com/onevcat/Kingfisher) - MIT License
-- [Alamofire](https://github.com/Alamofire/Alamofire) - MIT License
-- [GoogleCastSDK-ios-no-bluetooth](https://github.com/SRGSSR/GoogleCastSDK-ios-no-bluetooth) - Google Developer Terms
+**Frameworks Used:**
+*   [SwiftSoup](https://github.com/scinfu/SwiftSoup) (MIT License) - HTML Parsing
+*   [KingFisher](https://github.com/onevcat/Kingfisher) (MIT License) - Image Caching
+*   [Alamofire](https://github.com/Alamofire/Alamofire) (MIT License) - Networking
+*   [GoogleCastSDK-ios-no-bluetooth](https://github.com/SRGSSR/GoogleCastSDK-ios-no-bluetooth) (Google Developer Terms) - Chromecast Support
 
-APIs:
-- [AniWatch-api](https://github.com/ghoshritesh12/aniwatch-api) - MIT License
-- [AniSkip-api](https://github.com/aniskip/aniskip-api) - MIT License
-- [Deeplx-vercel-api](https://github.com/bropines/Deeplx-vercel) - MIT License
+**APIs Leveraged:**
+*   [AniWatch-api](https://github.com/ghoshritesh12/aniwatch-api) (MIT License) - Source Interaction
+*   [AniSkip-api](https://github.com/aniskip/aniskip-api) (MIT License) - Intro/Outro Timestamps
+*   [Deeplx-vercel-api](https://github.com/bropines/Deeplx-vercel) (MIT License) - Subtitle Translation
 
-Projects:
-- [AniWorld-Downloader](https://github.com/phoenixthrush/AniWorld-Downloader) - MIT License
+**Projects Referenced:**
+*   [AniWorld-Downloader](https://github.com/phoenixthrush/AniWorld-Downloader) (MIT License) - Source Interaction Logic
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+We welcome contributions! If you'd like to help improve Ryu Revamped:
 
-1. Fork the repository
-2. Make your changes
-3. Make sure that the app is not crashing and fully working
-4. Commit your changes + Push the changes to your forked repo
-5. Open a Pull Request describing what changed
+1.  **Fork** the repository at [https://github.com/realdoomsboygaming/Ryu-Reborn/](https://github.com/realdoomsboygaming/Ryu-Reborn/).
+2.  Create a **new branch** for your feature or fix (`git checkout -b feature/AmazingFeature`).
+3.  Make your **changes**.
+4.  **Test** thoroughly to ensure the app works correctly and doesn't crash.
+5.  **Commit** your changes (`git commit -m 'Add some AmazingFeature'`).
+6.  **Push** to the Branch (`git push origin feature/AmazingFeature`).
+7.  Open a **Pull Request** back to the main `realdoomsboygaming/Ryu-Reborn` repository, clearly describing your changes.
 
 ## License
 
-This project is licensed under the [GNU General Public License v3.0](LICENSE).
+Ryu Revamped is distributed under the **GNU General Public License v3.0**. See the [LICENSE](LICENSE) file for more details.
 
 ```
-Copyright © 2024 cranci. All rights reserved.
+Copyright © 2025 doomsboygaming. All rights reserved.
 
-Ryu is free software: you can redistribute it and/or modify
+Ryu Revamped is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 
-Ryu is distributed in the hope that it will be useful,
+Ryu Revamped is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with Ryu. If not, see <https://www.gnu.org/licenses/>.
+along with Ryu Revamped. If not, see <https://www.gnu.org/licenses/>.
 ```
 
-## Legal
+## Legal Disclaimer
 
-The content available is not affiliated with the developer, all contents are obtained by non-affiliated sources. Ryu doesn't store anything server side.
+**Ryu Revamped is an app that indexes content from third-party sources. The developer of Ryu Revamped is not affiliated with these sources and does not host any of the content.**
 
-Ryu is **not made to promote piracy nor to facilitate piracy** to any content. All this content are accessible by anyone anywhere very easily with just a browser. 
-
-I am not responsible if the user chooses to download anything; that is entirely their responsibility. I'm also not responsible of any content inside Ryu, they are all **3-rd party sites**.
+*   All anime content accessible through Ryu Revamped is provided by **non-affiliated third-party websites**.
+*   Ryu Revamped **does not store any anime video files or user data** on its own servers.
+*   The app is provided as a tool to access publicly available information. **It is not intended to promote or facilitate piracy.** The content indexed by Ryu Revamped is readily accessible online through a standard web browser.
+*   **The user assumes full responsibility** for how they use the app and for complying with their local copyright laws. The developer is not responsible for any content accessed or downloaded by the user.
