@@ -8,46 +8,63 @@
 import UIKit
 
 protocol ProgressDownloadCellDelegate: AnyObject {
-    func cancelDownload(for cell: ProgressDownloadCell)
+    func progressDownloadCell(_ cell: ProgressDownloadCell, didTapPauseResume url: URL)
+    func progressDownloadCell(_ cell: ProgressDownloadCell, didTapCancel url: URL)
 }
 
-class ProgressDownloadCell: UIView {
-    weak var delegate: ProgressDownloadCellDelegate?
+class ProgressDownloadCell: UITableViewCell {
+    static let identifier = "ProgressDownloadCell"
     
-    private let backgroundContentView: UIView = {
-        let view = UIView()
-        view.backgroundColor = .quaternarySystemFill
-        view.layer.cornerRadius = 12
-        view.translatesAutoresizingMaskIntoConstraints = false
-        return view
-    }()
+    weak var delegate: ProgressDownloadCellDelegate?
+    private var downloadURL: URL?
     
     private let titleLabel: UILabel = {
         let label = UILabel()
         label.font = .systemFont(ofSize: 16, weight: .medium)
         label.textColor = .label
-        label.translatesAutoresizingMaskIntoConstraints = false
+        label.numberOfLines = 2
         return label
     }()
     
     private let progressView: UIProgressView = {
         let progress = UIProgressView(progressViewStyle: .default)
-        progress.translatesAutoresizingMaskIntoConstraints = false
+        progress.tintColor = .systemTeal
         return progress
     }()
     
-    private let percentageLabel: UILabel = {
+    private let progressLabel: UILabel = {
         let label = UILabel()
-        label.font = .systemFont(ofSize: 14, weight: .regular)
+        label.font = .systemFont(ofSize: 14)
         label.textColor = .secondaryLabel
-        label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
     
-    override init(frame: CGRect) {
-        super.init(frame: frame)
+    private let speedLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 14)
+        label.textColor = .secondaryLabel
+        return label
+    }()
+    
+    private lazy var pauseResumeButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.setImage(UIImage(systemName: "pause.fill"), for: .normal)
+        button.tintColor = .systemTeal
+        button.addTarget(self, action: #selector(pauseResumeTapped), for: .touchUpInside)
+        return button
+    }()
+    
+    private lazy var cancelButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.setImage(UIImage(systemName: "xmark.circle.fill"), for: .normal)
+        button.tintColor = .systemRed
+        button.addTarget(self, action: #selector(cancelTapped), for: .touchUpInside)
+        return button
+    }()
+    
+    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+        super.init(style: style, reuseIdentifier: reuseIdentifier)
         setupViews()
-        setupContextMenuInteraction()
     }
     
     required init?(coder: NSCoder) {
@@ -55,65 +72,67 @@ class ProgressDownloadCell: UIView {
     }
     
     private func setupViews() {
-        backgroundColor = .systemBackground
-        layer.cornerRadius = 12
-        layer.masksToBounds = true
+        contentView.addSubview(titleLabel)
+        contentView.addSubview(progressView)
+        contentView.addSubview(progressLabel)
+        contentView.addSubview(speedLabel)
+        contentView.addSubview(pauseResumeButton)
+        contentView.addSubview(cancelButton)
         
-        addSubview(backgroundContentView)
-        backgroundContentView.addSubview(titleLabel)
-        backgroundContentView.addSubview(progressView)
-        backgroundContentView.addSubview(percentageLabel)
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        progressView.translatesAutoresizingMaskIntoConstraints = false
+        progressLabel.translatesAutoresizingMaskIntoConstraints = false
+        speedLabel.translatesAutoresizingMaskIntoConstraints = false
+        pauseResumeButton.translatesAutoresizingMaskIntoConstraints = false
+        cancelButton.translatesAutoresizingMaskIntoConstraints = false
         
         NSLayoutConstraint.activate([
-            backgroundContentView.topAnchor.constraint(equalTo: topAnchor, constant: 4),
-            backgroundContentView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
-            backgroundContentView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
-            backgroundContentView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
-            
-            titleLabel.topAnchor.constraint(equalTo: backgroundContentView.topAnchor, constant: 12),
-            titleLabel.leadingAnchor.constraint(equalTo: backgroundContentView.leadingAnchor, constant: 12),
-            titleLabel.trailingAnchor.constraint(equalTo: backgroundContentView.trailingAnchor, constant: -12),
+            titleLabel.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
+            titleLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+            titleLabel.trailingAnchor.constraint(equalTo: pauseResumeButton.leadingAnchor, constant: -8),
             
             progressView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 8),
-            progressView.leadingAnchor.constraint(equalTo: backgroundContentView.leadingAnchor, constant: 12),
-            progressView.trailingAnchor.constraint(equalTo: backgroundContentView.trailingAnchor, constant: -12),
+            progressView.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
+            progressView.trailingAnchor.constraint(equalTo: cancelButton.leadingAnchor, constant: -8),
             
-            percentageLabel.topAnchor.constraint(equalTo: progressView.bottomAnchor, constant: 8),
-            percentageLabel.trailingAnchor.constraint(equalTo: backgroundContentView.trailingAnchor, constant: -12),
-            percentageLabel.bottomAnchor.constraint(equalTo: backgroundContentView.bottomAnchor, constant: -12),
+            progressLabel.topAnchor.constraint(equalTo: progressView.bottomAnchor, constant: 4),
+            progressLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
+            progressLabel.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -12),
             
-            heightAnchor.constraint(greaterThanOrEqualToConstant: 88)
+            speedLabel.centerYAnchor.constraint(equalTo: progressLabel.centerYAnchor),
+            speedLabel.trailingAnchor.constraint(equalTo: titleLabel.trailingAnchor),
+            speedLabel.leadingAnchor.constraint(greaterThanOrEqualTo: progressLabel.trailingAnchor, constant: 16),
+            
+            pauseResumeButton.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
+            pauseResumeButton.trailingAnchor.constraint(equalTo: cancelButton.leadingAnchor, constant: -16),
+            pauseResumeButton.widthAnchor.constraint(equalToConstant: 44),
+            pauseResumeButton.heightAnchor.constraint(equalToConstant: 44),
+            
+            cancelButton.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
+            cancelButton.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
+            cancelButton.widthAnchor.constraint(equalToConstant: 44),
+            cancelButton.heightAnchor.constraint(equalToConstant: 44)
         ])
     }
     
-    private func setupContextMenuInteraction() {
-        let interaction = UIContextMenuInteraction(delegate: self)
-        addInteraction(interaction)
+    func configure(with metadata: DownloadMetadata) {
+        downloadURL = metadata.url
+        titleLabel.text = metadata.title
+        progressView.progress = Float(metadata.progress)
+        progressLabel.text = "\(Int(metadata.progress * 100))%"
+        speedLabel.text = ByteCountFormatter.string(fromByteCount: Int64(metadata.downloadSpeed), countStyle: .binary) + "/s"
+        
+        let imageName = metadata.state == .paused ? "play.fill" : "pause.fill"
+        pauseResumeButton.setImage(UIImage(systemName: imageName), for: .normal)
     }
     
-    func configure(with title: String, progress: Float) {
-        titleLabel.text = title
-        updateProgress(progress)
+    @objc private func pauseResumeTapped() {
+        guard let url = downloadURL else { return }
+        delegate?.progressDownloadCell(self, didTapPauseResume: url)
     }
     
-    func updateProgress(_ progress: Float) {
-        progressView.progress = progress
-        percentageLabel.text = String(format: "%.0f%%", progress * 100)
-    }
-}
-
-extension ProgressDownloadCell: UIContextMenuInteractionDelegate {
-    func contextMenuInteraction(_ interaction: UIContextMenuInteraction, configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
-        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
-            let copyTitleAction = UIAction(title: "Copy Link", image: UIImage(systemName: "paperclip")) { _ in
-                UIPasteboard.general.string = self.titleLabel.text
-            }
-            
-            let cancelDownloadAction = UIAction(title: "Cancel Download", image: UIImage(systemName: "xmark.circle")) { _ in
-                self.delegate?.cancelDownload(for: self)
-            }
-            
-            return UIMenu(title: "", children: [copyTitleAction, cancelDownloadAction])
-        }
+    @objc private func cancelTapped() {
+        guard let url = downloadURL else { return }
+        delegate?.progressDownloadCell(self, didTapCancel: url)
     }
 }

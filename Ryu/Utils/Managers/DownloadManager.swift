@@ -10,17 +10,57 @@ import Foundation
 import Combine
 
 // Download states
-enum DownloadState {
+enum DownloadState: String, Codable {
     case queued
-    case downloading(progress: Float, speed: Double)
+    case downloading
     case paused
     case completed
-    case failed(Error)
+    case failed
     case cancelled
+    
+    var progress: Float {
+        switch self {
+        case .downloading(let progress, _): return progress
+        default: return 0
+        }
+    }
+    
+    var speed: Double {
+        switch self {
+        case .downloading(_, let speed): return speed
+        default: return 0
+        }
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let rawValue = try container.decode(String.self)
+        switch rawValue {
+        case "queued": self = .queued
+        case "downloading": self = .downloading(progress: 0, speed: 0)
+        case "paused": self = .paused
+        case "completed": self = .completed
+        case "failed": self = .failed
+        case "cancelled": self = .cancelled
+        default: throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid state")
+        }
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .queued: try container.encode("queued")
+        case .downloading: try container.encode("downloading")
+        case .paused: try container.encode("paused")
+        case .completed: try container.encode("completed")
+        case .failed: try container.encode("failed")
+        case .cancelled: try container.encode("cancelled")
+        }
+    }
 }
 
 // Download priority
-enum DownloadPriority: Int {
+enum DownloadPriority: Int, Codable {
     case low = 0
     case normal = 1
     case high = 2
@@ -36,7 +76,7 @@ struct DownloadMetadata: Codable {
     let createdAt: Date
     let priority: DownloadPriority
     var state: DownloadState
-    var error: Error?
+    var error: String?
     var resumeData: Data?
 }
 
@@ -198,8 +238,8 @@ class DownloadManager {
                         updatedMetadata?.state = .completed
                         completion(.success(url))
                     case .failure(let error):
-                        updatedMetadata?.state = .failed(error)
-                        updatedMetadata?.error = error
+                        updatedMetadata?.state = .failed
+                        updatedMetadata?.error = error.localizedDescription
                         completion(.failure(error))
                     }
                     self.activeDownloads[metadata.id] = updatedMetadata

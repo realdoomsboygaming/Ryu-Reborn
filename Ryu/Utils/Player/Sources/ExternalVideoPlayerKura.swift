@@ -249,25 +249,34 @@ class ExternalVideoPlayerKura: UIViewController, GCKRemoteMediaClientListener {
     
     private func handleDownload(url: URL) {
         UserDefaults.standard.set(false, forKey: "isToDownload")
-        dismiss(animated: true)
+        
+        self.dismiss(animated: true, completion: nil)
         
         let downloadManager = DownloadManager.shared
-        let title = animeDetailsViewController?.animeTitle ?? "Anime Download"
+        let title = self.animeDetailsViewController?.animeTitle ?? "Anime Download"
         
-        downloadManager.startDownload(url: url, title: title, priority: .normal) { progress in
-            print("Download progress: \(progress * 100)%")
-        } { [weak self] result in
-            DispatchQueue.main.async {
-                switch result {
-                case .success(let downloadURL):
-                    print("Download completed. File saved at: \(downloadURL)")
-                    self?.animeDetailsViewController?.showAlert(withTitle: "Download Completed!", message: "You can find your download in the Library -> Downloads.")
-                case .failure(let error):
-                    print("Download failed with error: \(error.localizedDescription)")
-                    self?.animeDetailsViewController?.showAlert(withTitle: "Download Failed", message: error.localizedDescription)
+        downloadManager.startDownload(
+            url: url,
+            title: title,
+            priority: .normal,
+            progress: { progress in
+                DispatchQueue.main.async {
+                    print("Download progress: \(progress * 100)%")
+                }
+            },
+            completion: { [weak self] result in
+                DispatchQueue.main.async {
+                    switch result {
+                    case .success(let downloadURL):
+                        print("Download completed. File saved at: \(downloadURL)")
+                        self?.animeDetailsViewController?.showAlert(withTitle: "Download Completed!", message: "You can find your download in the Library -> Downloads.")
+                    case .failure(let error):
+                        print("Download failed with error: \(error.localizedDescription)")
+                        self?.animeDetailsViewController?.showAlert(withTitle: "Download Failed", message: error.localizedDescription)
+                    }
                 }
             }
-        }
+        )
     }
     
     private func castVideoToGoogleCast(videoURL: URL) {

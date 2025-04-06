@@ -9,154 +9,127 @@ import UIKit
 import Combine
 
 class ActiveDownloadsViewController: UIViewController {
-    private let scrollView: UIScrollView = {
-        let scroll = UIScrollView()
-        scroll.translatesAutoresizingMaskIntoConstraints = false
-        return scroll
-    }()
-    
-    private let stackView: UIStackView = {
-        let stack = UIStackView()
-        stack.axis = .vertical
-        stack.spacing = 12
-        stack.alignment = .fill
-        stack.distribution = .fill
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        return stack
-    }()
-    
-    private let emptyStateLabel: UILabel = {
-        let label = UILabel()
-        label.font = .systemFont(ofSize: 18, weight: .medium)
-        label.textColor = .secondaryLabel
-        label.textAlignment = .center
-        label.numberOfLines = 0
-        label.text = "No active downloads"
-        label.translatesAutoresizingMaskIntoConstraints = false
-        return label
-    }()
-    
-    private var downloads: [String: DownloadMetadata] = [:]
+    private let tableView = UITableView()
+    private let emptyStateLabel = UILabel()
+    private let downloadManager = DownloadManager.shared
     private var cancellables = Set<AnyCancellable>()
+    private var updateTimer: Timer?
+    
+    private var downloads: [URL: DownloadMetadata] = [:] {
+        didSet {
+            tableView.reloadData()
+            updateEmptyState()
+        }
+    }
     
     override func viewDidLoad() {
         super.viewDidLoad()
         setupViews()
         setupNotifications()
+        setupTimer()
         loadDownloads()
-        startProgressUpdateTimer()
+    }
+    
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        updateTimer?.invalidate()
+        updateTimer = nil
     }
     
     private func setupViews() {
-        view.addSubview(scrollView)
-        scrollView.addSubview(stackView)
+        view.backgroundColor = .systemBackground
+        title = "Active Downloads"
+        
+        tableView.delegate = self
+        tableView.dataSource = self
+        tableView.register(ProgressDownloadCell.self, forCellReuseIdentifier: ProgressDownloadCell.identifier)
+        tableView.separatorStyle = .none
+        tableView.backgroundColor = .systemBackground
+        view.addSubview(tableView)
+        
+        emptyStateLabel.text = "No active downloads"
+        emptyStateLabel.textAlignment = .center
+        emptyStateLabel.textColor = .secondaryLabel
+        emptyStateLabel.font = .systemFont(ofSize: 16)
+        emptyStateLabel.isHidden = true
         view.addSubview(emptyStateLabel)
         
+        tableView.translatesAutoresizingMaskIntoConstraints = false
+        emptyStateLabel.translatesAutoresizingMaskIntoConstraints = false
+        
         NSLayoutConstraint.activate([
-            scrollView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            
-            stackView.topAnchor.constraint(equalTo: scrollView.topAnchor, constant: 16),
-            stackView.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor, constant: 16),
-            stackView.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor, constant: -16),
-            stackView.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor, constant: -16),
-            stackView.widthAnchor.constraint(equalTo: scrollView.widthAnchor, constant: -32),
+            tableView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             
             emptyStateLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            emptyStateLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            emptyStateLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 32),
-            emptyStateLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -32)
+            emptyStateLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor)
         ])
     }
     
     private func setupNotifications() {
-        NotificationCenter.default.publisher(for: .downloadCompleted)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] notification in
-                if let id = notification.userInfo?["id"] as? String {
-                    self?.downloads.removeValue(forKey: id)
-                    self?.updateDownloadViews()
-                }
-            }
-            .store(in: &cancellables)
-        
         NotificationCenter.default.publisher(for: .downloadListUpdated)
-            .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.loadDownloads()
             }
             .store(in: &cancellables)
     }
     
-    private func loadDownloads() {
-        downloads = DownloadManager.shared.getActiveDownloads()
-        updateDownloadViews()
+    private func setupTimer() {
+        updateTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            self?.updateDownloadProgress()
+        }
     }
     
-    private func updateDownloadViews() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            
-            self.stackView.arrangedSubviews.forEach { $0.removeFromSuperview() }
-            
-            for (id, metadata) in self.downloads {
-                let downloadView = ProgressDownloadCell()
-                downloadView.configure(with: metadata)
-                downloadView.delegate = self
-                self.stackView.addArrangedSubview(downloadView)
+    private func loadDownloads() {
+        downloads = downloadManager.getActiveDownloads()
+    }
+    
+    private func updateDownloadProgress() {
+        for (url, metadata) in downloads {
+            if let updatedMetadata = downloadManager.getDownloadMetadata(for: url) {
+                downloads[url] = updatedMetadata
             }
-            
-            self.updateEmptyState()
         }
     }
     
     private func updateEmptyState() {
         emptyStateLabel.isHidden = !downloads.isEmpty
-        scrollView.isHidden = downloads.isEmpty
+    }
+}
+
+extension ActiveDownloadsViewController: UITableViewDelegate, UITableViewDataSource {
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        return downloads.count
     }
     
-    private func updateProgress() {
-        let activeDownloads = DownloadManager.shared.getActiveDownloads()
-        
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            
-            for (id, metadata) in activeDownloads {
-                if let downloadView = self.stackView.arrangedSubviews.first(where: { ($0 as? ProgressDownloadCell)?.downloadId == id }) as? ProgressDownloadCell {
-                    downloadView.updateProgress(with: metadata)
-                }
-            }
-            
-            if activeDownloads != self.downloads {
-                self.downloads = activeDownloads
-                self.updateDownloadViews()
-            }
-        }
+    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let cell = tableView.dequeueReusableCell(withIdentifier: ProgressDownloadCell.identifier, for: indexPath) as! ProgressDownloadCell
+        let metadata = Array(downloads.values)[indexPath.row]
+        cell.configure(with: metadata)
+        cell.delegate = self
+        return cell
     }
     
-    private func startProgressUpdateTimer() {
-        Timer.publish(every: 0.5, on: .main, in: .common)
-            .autoconnect()
-            .sink { [weak self] _ in
-                self?.updateProgress()
-            }
-            .store(in: &cancellables)
+    func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
+        return 88
     }
 }
 
 extension ActiveDownloadsViewController: ProgressDownloadCellDelegate {
-    func progressDownloadCell(_ cell: ProgressDownloadCell, didRequestPause id: String) {
-        DownloadManager.shared.pauseDownload(id: id)
+    func progressDownloadCell(_ cell: ProgressDownloadCell, didTapPauseResume url: URL) {
+        if let metadata = downloads[url] {
+            if metadata.state == .paused {
+                downloadManager.resumeDownload(for: url)
+            } else {
+                downloadManager.pauseDownload(for: url)
+            }
+        }
     }
     
-    func progressDownloadCell(_ cell: ProgressDownloadCell, didRequestResume id: String) {
-        DownloadManager.shared.resumeDownload(id: id)
-    }
-    
-    func progressDownloadCell(_ cell: ProgressDownloadCell, didRequestCancel id: String) {
-        DownloadManager.shared.cancelDownload(id: id)
+    func progressDownloadCell(_ cell: ProgressDownloadCell, didTapCancel url: URL) {
+        downloadManager.cancelDownload(for: url)
     }
 }
 

@@ -85,28 +85,30 @@ class BackgroundSessionDelegate: NSObject, URLSessionDelegate, URLSessionDownloa
         }
         
         do {
+            let destinationURL = DownloadManager.shared.getDestinationURL(for: taskId)
+            
             // Create destination directory if it doesn't exist
-            try FileManager.default.createDirectory(at: metadata.destinationURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: destinationURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             
             // Remove existing file if it exists
-            if FileManager.default.fileExists(atPath: metadata.destinationURL.path) {
-                try FileManager.default.removeItem(at: metadata.destinationURL)
+            if FileManager.default.fileExists(atPath: destinationURL.path) {
+                try FileManager.default.removeItem(at: destinationURL)
             }
             
             // Move downloaded file to destination
-            try FileManager.default.moveItem(at: location, to: metadata.destinationURL)
+            try FileManager.default.moveItem(at: location, to: destinationURL)
             
             // Update file size in metadata
-            let attributes = try FileManager.default.attributesOfItem(atPath: metadata.destinationURL.path)
+            let attributes = try FileManager.default.attributesOfItem(atPath: destinationURL.path)
             let fileSize = attributes[.size] as? Int64
             
-            downloadCompletionHandler?(.success(metadata.destinationURL))
+            downloadCompletionHandler?(.success(destinationURL))
             
             // Post notification for download completion
             NotificationCenter.default.post(name: .downloadCompleted, object: nil, userInfo: [
                 "id": taskId,
-                "title": metadata.title,
-                "url": metadata.destinationURL
+                "title": DownloadManager.shared.getTitle(for: taskId),
+                "url": destinationURL
             ])
             
         } catch {

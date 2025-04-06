@@ -8,84 +8,70 @@
 import UIKit
 
 class DownloadCell: UITableViewCell {
-    let playImageView: UIImageView = {
-        let imageView = UIImageView(image: UIImage(systemName: "play.circle.fill"))
-        imageView.tintColor = .systemTeal
-        imageView.contentMode = .scaleAspectFit
-        imageView.translatesAutoresizingMaskIntoConstraints = false
-        return imageView
-    }()
+    static let identifier = "DownloadCell"
     
-    let titleLabel: UILabel = {
+    private let titleLabel: UILabel = {
         let label = UILabel()
-        label.font = UIFont.systemFont(ofSize: 18, weight: .semibold)
+        label.font = .systemFont(ofSize: 16, weight: .medium)
         label.textColor = .label
-        label.translatesAutoresizingMaskIntoConstraints = false
+        label.numberOfLines = 2
         return label
     }()
     
-    let fileSizeLabel: UILabel = {
+    private let sizeLabel: UILabel = {
         let label = UILabel()
-        label.font = UIFont.systemFont(ofSize: 14, weight: .regular)
+        label.font = .systemFont(ofSize: 14)
         label.textColor = .secondaryLabel
-        label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
     
-    let chevronImageView: UIImageView = {
-        let imageView = UIImageView(image: UIImage(systemName: "chevron.right"))
-        imageView.tintColor = .gray
-        imageView.translatesAutoresizingMaskIntoConstraints = false
-        return imageView
+    private let dateLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 14)
+        label.textColor = .secondaryLabel
+        return label
     }()
     
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
-        setupUI()
+        setupViews()
     }
     
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
     
-    private func setupUI() {
-        addSubviews()
-        setupConstraints()
-        setupAppearance()
-    }
-    
-    private func addSubviews() {
-        contentView.addSubview(playImageView)
+    private func setupViews() {
         contentView.addSubview(titleLabel)
-        contentView.addSubview(fileSizeLabel)
-        contentView.addSubview(chevronImageView)
-    }
-    
-    private func setupConstraints() {
+        contentView.addSubview(sizeLabel)
+        contentView.addSubview(dateLabel)
+        
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        sizeLabel.translatesAutoresizingMaskIntoConstraints = false
+        dateLabel.translatesAutoresizingMaskIntoConstraints = false
+        
         NSLayoutConstraint.activate([
-            playImageView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
-            playImageView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
-            playImageView.widthAnchor.constraint(equalToConstant: 40),
-            playImageView.heightAnchor.constraint(equalToConstant: 40),
-            
-            titleLabel.leadingAnchor.constraint(equalTo: playImageView.trailingAnchor, constant: 16),
             titleLabel.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
-            titleLabel.trailingAnchor.constraint(equalTo: chevronImageView.leadingAnchor, constant: -8),
+            titleLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+            titleLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
             
-            fileSizeLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
-            fileSizeLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 4),
-            fileSizeLabel.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -12),
+            sizeLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 4),
+            sizeLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
+            sizeLabel.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -12),
             
-            chevronImageView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
-            chevronImageView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
-            chevronImageView.widthAnchor.constraint(equalToConstant: 10),
-            chevronImageView.heightAnchor.constraint(equalToConstant: 20)
+            dateLabel.centerYAnchor.constraint(equalTo: sizeLabel.centerYAnchor),
+            dateLabel.trailingAnchor.constraint(equalTo: titleLabel.trailingAnchor),
+            dateLabel.leadingAnchor.constraint(greaterThanOrEqualTo: sizeLabel.trailingAnchor, constant: 16)
         ])
     }
     
-    private func setupAppearance() {
-        contentView.backgroundColor = .systemGray5
-        backgroundColor = .systemGray5
-        selectionStyle = .none
+    func configure(with metadata: DownloadMetadata) {
+        titleLabel.text = metadata.title
+        sizeLabel.text = ByteCountFormatter.string(fromByteCount: Int64(metadata.fileSize), countStyle: .file)
+        
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateStyle = .medium
+        dateFormatter.timeStyle = .short
+        dateLabel.text = dateFormatter.string(from: metadata.dateAdded)
     }
 }
