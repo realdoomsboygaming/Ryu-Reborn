@@ -1,10 +1,3 @@
-//
-//  ExternalVideoPlayer3rb.swift
-//  Ryu
-//
-//  Created by Francesco on 08/07/24.
-//
-
 import AVKit
 import WebKit
 import SwiftSoup
@@ -170,7 +163,7 @@ class ExternalVideoPlayer3rb: UIViewController, GCKRemoteMediaClientListener {
         webView?.evaluateJavaScript("document.body.innerHTML") { [weak self] (result, error) in
             guard let self = self, let htmlString = result as? String else {
                 print("Error getting HTML: \(error?.localizedDescription ?? "Unknown error")")
-                self?.retryExtraction()
+                self.retryExtraction()
                 return
             }
             
@@ -188,7 +181,7 @@ class ExternalVideoPlayer3rb: UIViewController, GCKRemoteMediaClientListener {
         webView?.evaluateJavaScript("document.body.innerHTML") { [weak self] (result, error) in
             guard let self = self, let htmlString = result as? String else {
                 print("Error getting HTML: \(error?.localizedDescription ?? "Unknown error")")
-                self?.retryExtraction()
+                self.retryExtraction()
                 return
             }
             
@@ -256,9 +249,14 @@ class ExternalVideoPlayer3rb: UIViewController, GCKRemoteMediaClientListener {
     private func findNearestQuality(preferred: String) -> (label: String, url: URL)? {
         let preferredValue = Int(preferred.replacingOccurrences(of: "p", with: "")) ?? 0
         let sortedQualities = qualityOptions.sorted { quality1, quality2 in
-            let diff1 = abs(Int(quality1.label.replacingOccurrences(of: "p", with: ""))! - preferredValue)
-            let diff2 = abs(Int(quality2.label.replacingOccurrences(of: "p", with: ""))! - preferredValue)
-            return diff1 < diff2
+            let val1 = Int(quality1.label.replacingOccurrences(of: "p", with: "")) ?? 0
+            let val2 = Int(quality2.label.replacingOccurrences(of: "p", with: "")) ?? 0
+            let diff1 = abs(val1 - preferredValue)
+            let diff2 = abs(val2 - preferredValue)
+            if diff1 != diff2 {
+                return diff1 < diff2 // Closer quality first
+            }
+            return val1 > val2 // If same difference, prefer higher quality
         }
         return sortedQualities.first
     }
@@ -271,6 +269,18 @@ class ExternalVideoPlayer3rb: UIViewController, GCKRemoteMediaClientListener {
                 self?.handleVideoURL(url: option.url)
             }
             alertController.addAction(action)
+        }
+        
+         // Add cancel action
+        alertController.addAction(UIAlertAction(title: "Cancel", style: .cancel, handler: { [weak self] _ in
+             self?.dismiss(animated: true, completion: nil) // Dismiss if cancelled
+         }))
+
+        // Popover presentation for iPad
+        if let popoverController = alertController.popoverPresentationController {
+            popoverController.sourceView = self.view
+            popoverController.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 0, height: 0)
+            popoverController.permittedArrowDirections = []
         }
         
         present(alertController, animated: true, completion: nil)
@@ -356,22 +366,8 @@ class ExternalVideoPlayer3rb: UIViewController, GCKRemoteMediaClientListener {
         let downloadManager = DownloadManager.shared
         let title = self.animeDetailsViewController?.animeTitle ?? "Anime Download"
         
-        downloadManager.startDownload(url: url, title: title, progress: { progress in
-            DispatchQueue.main.async {
-                print("Download progress: \(progress * 100)%")
-            }
-        }) { [weak self] result in
-            DispatchQueue.main.async {
-                switch result {
-                case .success(let downloadURL):
-                    print("Download completed. File saved at: \(downloadURL)")
-                    self?.animeDetailsViewController?.showAlert(withTitle: "Download Completed!", message: "You can find your download in the Library -> Downloads.")
-                case .failure(let error):
-                    print("Download failed with error: \(error.localizedDescription)")
-                    self?.animeDetailsViewController?.showAlert(withTitle: "Download Failed", message: error.localizedDescription)
-                }
-            }
-        }
+        downloadManager.startDownload(url: url, title: title)
+        self.animeDetailsViewController?.showAlert(withTitle: "Download Started", message: "Check the Downloads tab for progress.")
     }
     
     private func playOrCastVideo(url: URL) {
@@ -422,7 +418,7 @@ class ExternalVideoPlayer3rb: UIViewController, GCKRemoteMediaClientListener {
             }
             
             let builder = GCKMediaInformationBuilder(contentURL: videoURL)
-            builder.contentType = "video/mp4"
+            builder.contentType = "video/mp4" // Assume mp4 for 3rb for now
             builder.metadata = metadata
             
             let streamTypeString = UserDefaults.standard.string(forKey: "castStreamingType") ?? "buffered"
