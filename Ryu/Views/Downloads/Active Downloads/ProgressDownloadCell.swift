@@ -1,19 +1,14 @@
-//
-//  ProgressDownloadCell.swift
-//  Ryu
-//
-//  Created by Francesco on 01/08/24.
-//
-
 import UIKit
 
 protocol ProgressDownloadCellDelegate: AnyObject {
-    func cancelDownload(for cell: ProgressDownloadCell)
+    // Pass the unique ID back to the delegate
+    func cancelDownload(for cell: ProgressDownloadCell, downloadId: String)
 }
 
 class ProgressDownloadCell: UIView {
     weak var delegate: ProgressDownloadCellDelegate?
-    
+    private var downloadId: String? // Store the ID
+
     private let backgroundContentView: UIView = {
         let view = UIView()
         view.backgroundColor = .quaternarySystemFill
@@ -26,6 +21,7 @@ class ProgressDownloadCell: UIView {
         let label = UILabel()
         label.font = .systemFont(ofSize: 16, weight: .medium)
         label.textColor = .label
+        label.numberOfLines = 2 // Allow multi-line titles
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
@@ -33,6 +29,8 @@ class ProgressDownloadCell: UIView {
     private let progressView: UIProgressView = {
         let progress = UIProgressView(progressViewStyle: .default)
         progress.translatesAutoresizingMaskIntoConstraints = false
+        progress.tintColor = .systemTeal // Use accent color
+        progress.trackTintColor = .systemGray4
         return progress
     }()
     
@@ -55,9 +53,9 @@ class ProgressDownloadCell: UIView {
     }
     
     private func setupViews() {
-        backgroundColor = .systemBackground
+        // No need for explicit background color on self if backgroundContentView covers it
         layer.cornerRadius = 12
-        layer.masksToBounds = true
+        layer.masksToBounds = true // Apply corner radius to the cell itself
         
         addSubview(backgroundContentView)
         backgroundContentView.addSubview(titleLabel)
@@ -65,10 +63,11 @@ class ProgressDownloadCell: UIView {
         backgroundContentView.addSubview(percentageLabel)
         
         NSLayoutConstraint.activate([
-            backgroundContentView.topAnchor.constraint(equalTo: topAnchor, constant: 4),
-            backgroundContentView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
-            backgroundContentView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
-            backgroundContentView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
+            // backgroundContentView constraints (same as before)
+            backgroundContentView.topAnchor.constraint(equalTo: topAnchor),
+            backgroundContentView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            backgroundContentView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            backgroundContentView.bottomAnchor.constraint(equalTo: bottomAnchor),
             
             titleLabel.topAnchor.constraint(equalTo: backgroundContentView.topAnchor, constant: 12),
             titleLabel.leadingAnchor.constraint(equalTo: backgroundContentView.leadingAnchor, constant: 12),
@@ -76,41 +75,52 @@ class ProgressDownloadCell: UIView {
             
             progressView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 8),
             progressView.leadingAnchor.constraint(equalTo: backgroundContentView.leadingAnchor, constant: 12),
-            progressView.trailingAnchor.constraint(equalTo: backgroundContentView.trailingAnchor, constant: -12),
+            // Give space for the percentage label
+            progressView.trailingAnchor.constraint(equalTo: percentageLabel.leadingAnchor, constant: -8),
+            progressView.heightAnchor.constraint(equalToConstant: 8), // Slightly thicker progress bar
             
-            percentageLabel.topAnchor.constraint(equalTo: progressView.bottomAnchor, constant: 8),
+            percentageLabel.centerYAnchor.constraint(equalTo: progressView.centerYAnchor),
             percentageLabel.trailingAnchor.constraint(equalTo: backgroundContentView.trailingAnchor, constant: -12),
-            percentageLabel.bottomAnchor.constraint(equalTo: backgroundContentView.bottomAnchor, constant: -12),
+            // Set minimum width for percentage label
+            percentageLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 40),
             
-            heightAnchor.constraint(greaterThanOrEqualToConstant: 88)
+            // Ensure backgroundContentView bottom is tied to the lowest element
+            backgroundContentView.bottomAnchor.constraint(equalTo: progressView.bottomAnchor, constant: 12)
         ])
     }
     
     private func setupContextMenuInteraction() {
         let interaction = UIContextMenuInteraction(delegate: self)
-        addInteraction(interaction)
+        addInteraction(interaction) // Add interaction to the cell view itself
     }
     
-    func configure(with title: String, progress: Float) {
-        titleLabel.text = title
+    // Updated configure method
+    func configure(with title: String, progress: Float, downloadId: String) {
+        self.titleLabel.text = title
+        self.downloadId = downloadId // Store the ID
         updateProgress(progress)
     }
     
     func updateProgress(_ progress: Float) {
-        progressView.progress = progress
+        progressView.setProgress(progress, animated: true) // Animate progress changes
         percentageLabel.text = String(format: "%.0f%%", progress * 100)
     }
 }
 
 extension ProgressDownloadCell: UIContextMenuInteractionDelegate {
     func contextMenuInteraction(_ interaction: UIContextMenuInteraction, configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
-        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
-            let copyTitleAction = UIAction(title: "Copy Link", image: UIImage(systemName: "paperclip")) { _ in
+        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ -> UIMenu? in
+            guard let self = self else { return nil }
+
+            let copyTitleAction = UIAction(title: "Copy Title", image: UIImage(systemName: "doc.on.doc")) { _ in
                 UIPasteboard.general.string = self.titleLabel.text
             }
             
-            let cancelDownloadAction = UIAction(title: "Cancel Download", image: UIImage(systemName: "xmark.circle")) { _ in
-                self.delegate?.cancelDownload(for: self)
+            // Pass the stored downloadId to the delegate
+            let cancelDownloadAction = UIAction(title: "Cancel Download", image: UIImage(systemName: "xmark.circle"), attributes: .destructive) { _ in
+                 if let id = self.downloadId {
+                     self.delegate?.cancelDownload(for: self, downloadId: id)
+                 }
             }
             
             return UIMenu(title: "", children: [copyTitleAction, cancelDownloadAction])
