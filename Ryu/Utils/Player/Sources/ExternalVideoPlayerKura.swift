@@ -100,7 +100,8 @@ class ExternalVideoPlayerKura: UIViewController, GCKRemoteMediaClientListener {
     private func beginHoldSpeed() {
         guard let player = player else { return }
         originalRate = player.rate
-        player.rate = UserDefaults.standard.float(forKey: "holdSpeedPlayer")
+        // Ensure default value is float
+        player.rate = UserDefaults.standard.float(forKey: "holdSpeedPlayer") != 0 ? UserDefaults.standard.float(forKey: "holdSpeedPlayer") : 2.0
     }
     
     private func endHoldSpeed() {
@@ -132,6 +133,8 @@ class ExternalVideoPlayerKura: UIViewController, GCKRemoteMediaClientListener {
     private func loadInitialURL() {
         guard let url = URL(string: streamURL) else {
             print("Invalid stream URL")
+            activityIndicator?.stopAnimating() // Stop indicator if URL is bad
+            dismiss(animated: true) // Dismiss if URL is bad
             return
         }
         webView?.load(URLRequest(url: url))
@@ -154,9 +157,9 @@ class ExternalVideoPlayerKura: UIViewController, GCKRemoteMediaClientListener {
             let videoElement = try doc.select("video#player").first()
             let sourceElements = try videoElement?.select("source")
             
-            videoURLs.removeAll() // Clear previous URLs before parsing again
+            videoURLs.removeAll() // Clear previous URLs
             sourceElements?.forEach { element in
-                if let _ = try? element.attr("size"),
+                if let _ = try? element.attr("size"), // Check if 'size' attribute exists
                    let url = try? element.attr("src") {
                     let id = element.id()
                     let qualityNumber = id.replacingOccurrences(of: "source", with: "")
@@ -184,7 +187,7 @@ class ExternalVideoPlayerKura: UIViewController, GCKRemoteMediaClientListener {
         if let url = videoURLs[preferredQuality], let videoURL = URL(string: url) {
             handleVideoURL(url: videoURL)
         } else {
-            let availableQualities = videoURLs.keys.compactMap { Int($0.replacingOccurrences(of: "p", with: "")) }.sorted(by: >)
+             let availableQualities = videoURLs.keys.compactMap { Int($0.replacingOccurrences(of: "p", with: "")) }.sorted(by: >) // Sort descending
             let preferredQualityValue = Int(preferredQuality.replacingOccurrences(of: "p", with: "")) ?? 720
             
             let closestQuality = availableQualities.first { $0 <= preferredQualityValue } ?? availableQualities.first
@@ -326,7 +329,7 @@ class ExternalVideoPlayerKura: UIViewController, GCKRemoteMediaClientListener {
     
     private func updatePlaybackProgress(time: CMTime, duration: Double) {
         let currentTime = time.seconds
-        let progress = duration > 0 ? currentTime / duration : 0 // Prevent division by zero
+        let progress = duration > 0 ? currentTime / duration : 0
         let remainingTime = duration > 0 ? duration - currentTime : 0
         
         cell.updatePlaybackProgress(progress: Float(progress), remainingTime: remainingTime)
@@ -338,6 +341,7 @@ class ExternalVideoPlayerKura: UIViewController, GCKRemoteMediaClientListener {
     }
     
     private func updateContinueWatchingItem(currentTime: Double, duration: Double) {
+        // Access properties via animeDetailsViewController safely
         if let viewController = self.animeDetailsViewController,
            let episodeNumberString = viewController.episodes[safe: viewController.currentEpisodeIndex]?.number {
             
@@ -359,17 +363,22 @@ class ExternalVideoPlayerKura: UIViewController, GCKRemoteMediaClientListener {
     }
     
     private func sendPushUpdates(remainingTime: Double, totalTime: Double) {
-        guard let animeDetailsViewController = animeDetailsViewController, UserDefaults.standard.bool(forKey: "sendPushUpdates"), totalTime > 0, remainingTime / totalTime < 0.15, !animeDetailsViewController.hasSentUpdate
+        // Access properties via animeDetailsViewController safely
+        guard let animeDetailsViewController = animeDetailsViewController,
+              UserDefaults.standard.bool(forKey: "sendPushUpdates"),
+              totalTime > 0,
+              remainingTime / totalTime < 0.15,
+              !animeDetailsViewController.hasSentUpdate
         else {
             return
         }
         
         let cleanedTitle = animeDetailsViewController.cleanTitle(animeDetailsViewController.animeTitle ?? "Unknown Anime")
-        animeDetailsViewController.fetchAnimeID(title: cleanedTitle) { [weak self] animeID in
-            guard let self = self else { return }
-            let episodeNumberString = self.episodes[safe: self.currentEpisodeIndex]?.number ?? "0"
-            let episodeNumber = EpisodeNumberExtractor.extract(from: episodeNumberString)
+        // Safely get episode number string
+        let episodeNumberString = animeDetailsViewController.episodes[safe: animeDetailsViewController.currentEpisodeIndex]?.number ?? "0"
+        let episodeNumber = EpisodeNumberExtractor.extract(from: episodeNumberString)
 
+        animeDetailsViewController.fetchAnimeID(title: cleanedTitle) { animeID in
             let aniListMutation = AniListMutation()
             aniListMutation.updateAnimeProgress(animeId: animeID, episodeNumber: episodeNumber) { result in
                 switch result {
@@ -377,6 +386,7 @@ class ExternalVideoPlayerKura: UIViewController, GCKRemoteMediaClientListener {
                 case .failure(let error): print("Failed to update anime progress: \(error.localizedDescription)")
                 }
             }
+            // Mark as sent on the detail view controller
             animeDetailsViewController.hasSentUpdate = true
         }
     }
@@ -399,26 +409,31 @@ class ExternalVideoPlayerKura: UIViewController, GCKRemoteMediaClientListener {
     
     deinit {
         NotificationCenter.default.removeObserver(self)
+        cleanup() // Ensure cleanup is called
     }
     
     private func cleanup() {
         player?.pause()
-        player = nil
+        
+        if let timeObserverToken = timeObserverToken {
+            // Only remove observer if player exists
+            if let player = self.player {
+                 player.removeTimeObserver(timeObserverToken)
+            }
+            self.timeObserverToken = nil
+        }
+        player = nil // Set player to nil after removing observer
         
         playerViewController?.willMove(toParent: nil)
         playerViewController?.view.removeFromSuperview()
         playerViewController?.removeFromParent()
         playerViewController = nil
         
-        if let timeObserverToken = timeObserverToken {
-            if let player = self.player {
-                 player.removeTimeObserver(timeObserverToken)
-            }
-            self.timeObserverToken = nil
-        }
-        
         webView?.stopLoading()
         webView?.loadHTMLString("", baseURL: nil)
+        // Explicitly nil out webView to break potential retain cycles if any strong refs exist elsewhere
+        webView?.navigationDelegate = nil
+        webView = nil
     }
     
     @objc func playerItemDidReachEnd(notification: Notification) {
@@ -475,7 +490,6 @@ class ExternalVideoPlayerKura: UIViewController, GCKRemoteMediaClientListener {
     }
 }
 
-// **FIXED:** Keep WKNavigationDelegate conformance only in the extension
 extension ExternalVideoPlayerKura: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         extractVideoSources()
