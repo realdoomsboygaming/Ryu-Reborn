@@ -81,7 +81,6 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                    let window = windowScene.windows.first,
                    let rootVC = window.rootViewController {
                     
-                    // Check if onboarding is already presented
                     if rootVC.presentedViewController is OnboardingViewController {
                         return
                     }
@@ -95,21 +94,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
     
     func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey : Any] = [:]) -> Bool {
-        // Handle your custom URL scheme
         if url.scheme == "ryu", url.host == "anilist", let queryParams = url.queryParameters, let code = queryParams["code"] {
             NotificationCenter.default.post(name: Notification.Name("AuthorizationCodeReceived"), object: nil, userInfo: ["code": code])
-            return true // Indicate you handled the URL
+            return true
         }
-
-        // Allow Google Cast SDK to handle its URLs
-        // Note: The signature GCKCastContext.sharedInstance().application(...) might be outdated.
-        // Check current Google Cast SDK documentation if casting via URL scheme is needed.
-        // Usually, the Cast SDK works through network discovery rather than URL schemes.
-        // If the Cast SDK doesn't provide this method anymore, simply remove the line below.
-        // For now, let's comment it out as it caused the build error.
-        // return GCKCastContext.sharedInstance().application(app, open: url, options: options)
-
-        // If it's not your URL scheme or Cast's (if handled), return false.
+        // **FIXED:** Removed the problematic GCKCastContext call.
+        // The Cast SDK usually handles discovery without specific URL schemes being passed here.
         return false
     }
     
@@ -123,9 +113,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // Called when the user discards a scene session.
     }
 
-    // Pass the completion handler to the DownloadManager
     func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String, completionHandler: @escaping () -> Void) {
-        // Store the completion handler in DownloadManager
         DownloadManager.shared.backgroundCompletionHandler = completionHandler
     }
 
