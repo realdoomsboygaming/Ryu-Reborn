@@ -49,6 +49,11 @@ class EpisodeCell: UITableViewCell {
         }
     }
     
+    // Store constraints that need to be updated
+    private var episodeLabelLeadingConstraint: NSLayoutConstraint?
+    private var startnowLabelLeadingConstraint: NSLayoutConstraint?
+    private var playbackProgressViewLeadingConstraint: NSLayoutConstraint?
+    
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
         setupCell()
@@ -100,11 +105,16 @@ class EpisodeCell: UITableViewCell {
         
         playbackProgressView.tintColor = .systemTeal
         
+        // Create and store constraints that need to be updated
+        episodeLabelLeadingConstraint = episodeLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16)
+        startnowLabelLeadingConstraint = startnowLabel.leadingAnchor.constraint(equalTo: episodeLabel.leadingAnchor)
+        playbackProgressViewLeadingConstraint = playbackProgressView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16)
+        
         NSLayoutConstraint.activate([
-            episodeLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+            episodeLabelLeadingConstraint!,
             episodeLabel.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 10),
             
-            startnowLabel.leadingAnchor.constraint(equalTo: episodeLabel.leadingAnchor),
+            startnowLabelLeadingConstraint!,
             startnowLabel.topAnchor.constraint(equalTo: episodeLabel.bottomAnchor, constant: 5),
             
             downloadButton.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -15),
@@ -112,7 +122,7 @@ class EpisodeCell: UITableViewCell {
             downloadButton.widthAnchor.constraint(equalToConstant: 30),
             downloadButton.heightAnchor.constraint(equalToConstant: 30),
             
-            playbackProgressView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+            playbackProgressViewLeadingConstraint!,
             playbackProgressView.centerYAnchor.constraint(equalTo: startnowLabel.centerYAnchor),
             playbackProgressView.widthAnchor.constraint(equalToConstant: 130),
             
@@ -149,7 +159,25 @@ class EpisodeCell: UITableViewCell {
     }
     
     func setSelectionMode(_ enabled: Bool) {
-        selectionCheckbox.isHidden = !enabled
+        let checkboxWidth: CGFloat = 24
+        let spacing: CGFloat = 8
+        
+        UIView.animate(withDuration: 0.3) {
+            self.selectionCheckbox.isHidden = !enabled
+            
+            if enabled {
+                self.episodeLabelLeadingConstraint?.constant = 16 + checkboxWidth + spacing
+                self.startnowLabelLeadingConstraint?.constant = 16 + checkboxWidth + spacing
+                self.playbackProgressViewLeadingConstraint?.constant = 16 + checkboxWidth + spacing
+            } else {
+                self.episodeLabelLeadingConstraint?.constant = 16
+                self.startnowLabelLeadingConstraint?.constant = 0
+                self.playbackProgressViewLeadingConstraint?.constant = 16
+            }
+            
+            self.layoutIfNeeded()
+        }
+        
         if !enabled {
             episodeSelected = false
         }
