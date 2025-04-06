@@ -3,8 +3,7 @@ import WebKit
 import SwiftSoup
 import GoogleCast
 
-// Add WKNavigationDelegate conformance here
-class ExternalVideoPlayer3rb: UIViewController, GCKRemoteMediaClientListener, WKNavigationDelegate {
+class ExternalVideoPlayer3rb: UIViewController, GCKRemoteMediaClientListener {
     private let streamURL: String
     private var webView: WKWebView?
     private var player: AVPlayer?
@@ -112,7 +111,7 @@ class ExternalVideoPlayer3rb: UIViewController, GCKRemoteMediaClientListener, WK
     private func beginHoldSpeed() {
         guard let player = player else { return }
         originalRate = player.rate
-        let holdSpeed = UserDefaults.standard.float(forKey: "holdSpeedPlayer")
+        let holdSpeed = UserDefaults.standard.float(forKey: "holdSpeedPlayer") != 0 ? UserDefaults.standard.float(forKey: "holdSpeedPlayer") : 2.0
         player.rate = holdSpeed
     }
     
@@ -140,12 +139,14 @@ class ExternalVideoPlayer3rb: UIViewController, GCKRemoteMediaClientListener, WK
     private func setupWebView() {
         let configuration = WKWebViewConfiguration()
         webView = WKWebView(frame: .zero, configuration: configuration)
-        webView?.navigationDelegate = self
+        webView?.navigationDelegate = self // Assign delegate here
     }
     
     private func loadInitialURL() {
         guard let url = URL(string: streamURL) else {
             print("Invalid stream URL")
+            activityIndicator?.stopAnimating()
+            dismiss(animated: true)
             return
         }
         let request = URLRequest(url: url)
@@ -162,10 +163,9 @@ class ExternalVideoPlayer3rb: UIViewController, GCKRemoteMediaClientListener, WK
     
     private func extractIframeSource() {
         webView?.evaluateJavaScript("document.body.innerHTML") { [weak self] (result, error) in
-             // **FIXED:** Use guard let self = self else { return }
             guard let self = self, let htmlString = result as? String else {
                 print("Error getting HTML: \(error?.localizedDescription ?? "Unknown error")")
-                self?.retryExtraction() // Now self is guaranteed non-nil here
+                self?.retryExtraction()
                 return
             }
             
@@ -181,10 +181,9 @@ class ExternalVideoPlayer3rb: UIViewController, GCKRemoteMediaClientListener, WK
     
     private func extractVideoSource() {
         webView?.evaluateJavaScript("document.body.innerHTML") { [weak self] (result, error) in
-             // **FIXED:** Use guard let self = self else { return }
             guard let self = self, let htmlString = result as? String else {
                 print("Error getting HTML: \(error?.localizedDescription ?? "Unknown error")")
-                self?.retryExtraction() // Now self is guaranteed non-nil here
+                self?.retryExtraction()
                 return
             }
             
@@ -275,10 +274,9 @@ class ExternalVideoPlayer3rb: UIViewController, GCKRemoteMediaClientListener, WK
         }
 
         alertController.addAction(UIAlertAction(title: "Cancel", style: .cancel, handler: { [weak self] _ in
-            self?.dismiss(animated: true, completion: nil) // Dismiss if cancelled
+            self?.dismiss(animated: true, completion: nil)
         }))
         
-        // Popover presentation for iPad
         if let popoverController = alertController.popoverPresentationController {
             popoverController.sourceView = self.view
             popoverController.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 0, height: 0)
@@ -368,9 +366,7 @@ class ExternalVideoPlayer3rb: UIViewController, GCKRemoteMediaClientListener, WK
         let downloadManager = DownloadManager.shared
         let title = self.animeDetailsViewController?.animeTitle ?? "Anime Download"
         
-        // **FIXED:** Removed progress and completion closures
         downloadManager.startDownload(url: url, title: title)
-        
         self.animeDetailsViewController?.showAlert(withTitle: "Download Started", message: "Check the Downloads tab for progress.")
     }
     
@@ -459,8 +455,8 @@ class ExternalVideoPlayer3rb: UIViewController, GCKRemoteMediaClientListener, WK
             
             let currentTime = time.seconds
             let duration = currentItem.duration.seconds
-            let progress = currentTime / duration
-            let remainingTime = duration - currentTime
+            let progress = duration > 0 ? currentTime / duration : 0
+            let remainingTime = duration > 0 ? duration - currentTime : 0
             
             self.cell.updatePlaybackProgress(progress: Float(progress), remainingTime: remainingTime)
             
@@ -468,55 +464,62 @@ class ExternalVideoPlayer3rb: UIViewController, GCKRemoteMediaClientListener, WK
             UserDefaults.standard.set(duration, forKey: "totalTime_\(self.fullURL)")
             
             if let viewController = self.animeDetailsViewController,
-               let episodeNumber = viewController.episodes[safe: viewController.currentEpisodeIndex]?.number {
+               let episodeNumberString = viewController.episodes[safe: viewController.currentEpisodeIndex]?.number {
                 
-                if let episodeNumberInt = Int(episodeNumber) {
-                    let selectedMediaSource = UserDefaults.standard.string(forKey: "selectedMediaSource") ?? "Anime3rb"
-                    
-                    let continueWatchingItem = ContinueWatchingItem(
-                        animeTitle: viewController.animeTitle ?? "Unknown Anime",
-                        episodeTitle: "Ep. \(episodeNumberInt)",
-                        episodeNumber: episodeNumberInt,
-                        imageURL: viewController.imageUrl ?? "",
-                        fullURL: self.fullURL,
-                        lastPlayedTime: currentTime,
-                        totalTime: duration,
-                        source: selectedMediaSource
-                    )
-                    ContinueWatchingManager.shared.saveItem(continueWatchingItem)
+                let episodeNumber = EpisodeNumberExtractor.extract(from: episodeNumberString)
+                let selectedMediaSource = UserDefaults.standard.string(forKey: "selectedMediaSource") ?? "Anime3rb"
+                
+                let continueWatchingItem = ContinueWatchingItem(
+                    animeTitle: viewController.animeTitle ?? "Unknown Anime",
+                    episodeTitle: "Ep. \(episodeNumber)",
+                    episodeNumber: episodeNumber,
+                    imageURL: viewController.imageUrl ?? "",
+                    fullURL: self.fullURL,
+                    lastPlayedTime: currentTime,
+                    totalTime: duration,
+                    source: selectedMediaSource
+                )
+                ContinueWatchingManager.shared.saveItem(continueWatchingItem)
 
-                    let shouldSendPushUpdates = UserDefaults.standard.bool(forKey: "sendPushUpdates")
+                let shouldSendPushUpdates = UserDefaults.standard.bool(forKey: "sendPushUpdates")
 
-                    if shouldSendPushUpdates && remainingTime / duration < 0.15 && !viewController.hasSentUpdate {
-                        let cleanedTitle = viewController.cleanTitle(viewController.animeTitle ?? "Unknown Anime")
+                if shouldSendPushUpdates && duration > 0 && remainingTime / duration < 0.15 && !viewController.hasSentUpdate {
+                    let cleanedTitle = viewController.cleanTitle(viewController.animeTitle ?? "Unknown Anime")
 
-                        viewController.fetchAnimeID(title: cleanedTitle) { animeID in
-                            let aniListMutation = AniListMutation()
-                            aniListMutation.updateAnimeProgress(animeId: animeID, episodeNumber: episodeNumberInt) { result in
-                                switch result {
-                                case .success():
-                                    print("Successfully updated anime progress.")
-                                case .failure(let error):
-                                    print("Failed to update anime progress: \(error.localizedDescription)")
-                                }
+                    viewController.fetchAnimeID(title: cleanedTitle) { animeID in
+                        let aniListMutation = AniListMutation()
+                        aniListMutation.updateAnimeProgress(animeId: animeID, episodeNumber: episodeNumber) { result in
+                            switch result {
+                            case .success():
+                                print("Successfully updated anime progress.")
+                            case .failure(let error):
+                                print("Failed to update anime progress: \(error.localizedDescription)")
                             }
-                            
-                            viewController.hasSentUpdate = true
                         }
+                        
+                        viewController.hasSentUpdate = true
                     }
-                } else {
-                    print("Error: Failed to convert episodeNumber '\(episodeNumber)' to an Int.")
                 }
+            } else {
+                 print("Error: Could not get episode number string or view controller.")
             }
         }
     }
     
     deinit {
         NotificationCenter.default.removeObserver(self)
+        cleanup() // Ensure cleanup is called
     }
     
     private func cleanup() {
         player?.pause()
+        
+        if let timeObserverToken = timeObserverToken {
+            if let player = self.player {
+                 player.removeTimeObserver(timeObserverToken)
+            }
+            self.timeObserverToken = nil
+        }
         player = nil
         
         playerViewController?.willMove(toParent: nil)
@@ -524,16 +527,10 @@ class ExternalVideoPlayer3rb: UIViewController, GCKRemoteMediaClientListener, WK
         playerViewController?.removeFromParent()
         playerViewController = nil
         
-        if let timeObserverToken = timeObserverToken {
-             // Ensure player exists before removing observer
-            if let player = self.player {
-                player.removeTimeObserver(timeObserverToken)
-            }
-            self.timeObserverToken = nil
-        }
-        
         webView?.stopLoading()
         webView?.loadHTMLString("", baseURL: nil)
+        webView?.navigationDelegate = nil
+        webView = nil
     }
     
     private func retryExtraction() {
