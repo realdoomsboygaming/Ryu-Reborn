@@ -43,7 +43,7 @@ class EpisodeCell: UITableViewCell {
     
     weak var delegate: AnimeDetailViewController?
     var episode: Episode?
-    var isSelected: Bool = false {
+    var episodeSelected: Bool = false {
         didSet {
             updateSelectionState()
         }
@@ -145,13 +145,13 @@ class EpisodeCell: UITableViewCell {
     }
     
     private func updateSelectionState() {
-        selectionCheckbox.image = UIImage(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+        selectionCheckbox.image = UIImage(systemName: episodeSelected ? "checkmark.circle.fill" : "circle")
     }
     
     func setSelectionMode(_ enabled: Bool) {
         selectionCheckbox.isHidden = !enabled
         if !enabled {
-            isSelected = false
+            episodeSelected = false
         }
     }
     

@@ -366,7 +366,7 @@ class AnimeDetailViewController: UITableViewController, GCKRemoteMediaClientList
             cell.configure(episode: episode, delegate: self)
             cell.loadSavedProgress(for: episode.href)
             cell.setSelectionMode(isSelectionMode)
-            cell.isSelected = selectedEpisodes.contains(episode)
+            cell.episodeSelected = selectedEpisodes.contains(episode)
             return cell
         default:
             return UITableViewCell()
@@ -719,10 +719,10 @@ class AnimeDetailViewController: UITableViewController, GCKRemoteMediaClientList
                let episode = cell.episode {
                 if selectedEpisodes.contains(episode) {
                     selectedEpisodes.remove(episode)
-                    cell.isSelected = false
+                    cell.episodeSelected = false
                 } else {
                     selectedEpisodes.insert(episode)
-                    cell.isSelected = true
+                    cell.episodeSelected = true
                 }
             }
         } else {
