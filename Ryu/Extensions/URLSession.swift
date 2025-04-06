@@ -8,7 +8,7 @@
 import Foundation
 
 extension URLSession {
-    func syncRequest(with request: URLRequest) -> (Data?, URLResponse?, Error?) {
+    func syncRequest(with request: URLRequest, timeout: TimeInterval = 30) -> (Data?, URLResponse?, Error?) {
         var data: Data?
         var response: URLResponse?
         var error: Error?
@@ -23,7 +23,12 @@ extension URLSession {
         }
         
         task.resume()
-        semaphore.wait()
+        
+        // Add timeout to prevent deadlocks
+        if semaphore.wait(timeout: .now() + timeout) == .timedOut {
+            task.cancel()
+            error = NSError(domain: "URLSession", code: -1, userInfo: [NSLocalizedDescriptionKey: "Request timed out"])
+        }
         
         return (data, response, error)
     }

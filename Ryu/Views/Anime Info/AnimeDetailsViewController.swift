@@ -37,6 +37,8 @@ class AnimeDetailViewController: UITableViewController, GCKRemoteMediaClientList
     var availableQualities: [String] = []
     var qualityOptions: [(name: String, fileName: String)] = []
     
+    private var currentDataTask: URLSessionDataTask?
+    
     func configure(title: String, imageUrl: String, href: String, source: String) {
         self.animeTitle = title
         self.href = href
@@ -155,6 +157,9 @@ class AnimeDetailViewController: UITableViewController, GCKRemoteMediaClientList
            let remoteMediaClient = castSession.remoteMediaClient {
             remoteMediaClient.remove(self)
         }
+        
+        currentDataTask?.cancel()
+        currentDataTask = nil
     }
     
     private func toggleFavorite() {
@@ -963,7 +968,10 @@ class AnimeDetailViewController: UITableViewController, GCKRemoteMediaClientList
             return
         }
         
-        URLSession.shared.dataTask(with: requestURL) { [weak self] (data, response, error) in
+        // Cancel any existing task
+        currentDataTask?.cancel()
+        
+        currentDataTask = URLSession.shared.dataTask(with: requestURL) { [weak self] (data, response, error) in
             guard let self = self else { return }
             
             DispatchQueue.main.async {
@@ -998,17 +1006,6 @@ class AnimeDetailViewController: UITableViewController, GCKRemoteMediaClientList
                     srcURL = URL(string: fullURL)
                 case "AnimeSRBIJA":
                     srcURL = self.extractAsgoldURL(from: htmlString)
-                case "Anime3rb":
-                    self.anime3rbGetter  (from: htmlString) { finalUrl in
-                        if let url = finalUrl {
-                            self.hideLoadingBanner()
-                            self.playVideo(sourceURL: url, cell: cell, fullURL: fullURL)
-                        } else {
-                            self.hideLoadingBannerAndShowAlert(title: "Error", message: "Error extracting source URL")
-                            return
-                        }
-                    }
-                    return
                 case "AniVibe":
                     srcURL = self.extractAniVibeURL(from: htmlString)
                 case "AniBunker":
@@ -1059,34 +1056,33 @@ class AnimeDetailViewController: UITableViewController, GCKRemoteMediaClientList
                     srcURL = self.extractIframeSourceURL(from: htmlString)
                 }
                 
-                guard let finalSrcURL = srcURL else {
-                    self.hideLoadingBannerAndShowAlert(title: "Error", message: "The stream URL wasn't found.")
-                    return
-                }
-                
-                self.hideLoadingBanner {
-                    DispatchQueue.main.async {
-                        switch selectedMediaSource {
-                        case "GoGoAnime":
-                            let playerType = gogoFetcher == "Secondary" ? VideoPlayerType.standard : VideoPlayerType.playerGoGo2
-                            self.startStreamingButtonTapped(withURL: finalSrcURL.absoluteString, captionURL: "", playerType: playerType, cell: cell, fullURL: fullURL)
-                        case "AnimeFire":
-                            self.fetchVideoDataAndChooseQuality(from: finalSrcURL.absoluteString) { selectedURL in
-                                guard let selectedURL = selectedURL else {
-                                    self.showAlert(title: "Error", message: "Failed to fetch video data")
-                                    return
+                if let srcURL = srcURL {
+                    self.currentDataTask = nil
+                    self.hideLoadingBanner {
+                        DispatchQueue.main.async {
+                            switch selectedMediaSource {
+                            case "GoGoAnime":
+                                let playerType = gogoFetcher == "Secondary" ? VideoPlayerType.standard : VideoPlayerType.playerGoGo2
+                                self.startStreamingButtonTapped(withURL: srcURL.absoluteString, captionURL: "", playerType: playerType, cell: cell, fullURL: fullURL)
+                            case "AnimeFire":
+                                self.fetchVideoDataAndChooseQuality(from: srcURL.absoluteString) { selectedURL in
+                                    guard let selectedURL = selectedURL else {
+                                        self.showAlert(title: "Error", message: "Failed to fetch video data")
+                                        return
+                                    }
+                                    self.playVideo(sourceURL: selectedURL, cell: cell, fullURL: fullURL)
                                 }
-                                self.playVideo(sourceURL: selectedURL, cell: cell, fullURL: fullURL)
+                            case "Kuramanime":
+                                self.startStreamingButtonTapped(withURL: srcURL.absoluteString, captionURL: "", playerType: VideoPlayerType.playerKura, cell: cell, fullURL: fullURL)
+                            default:
+                                self.playVideo(sourceURL: srcURL, cell: cell, fullURL: fullURL)
                             }
-                        case "Kuramanime":
-                            self.startStreamingButtonTapped(withURL: finalSrcURL.absoluteString, captionURL: "", playerType: VideoPlayerType.playerKura, cell: cell, fullURL: fullURL)
-                        default:
-                            self.playVideo(sourceURL: finalSrcURL, cell: cell, fullURL: fullURL)
                         }
                     }
                 }
             }
-        }.resume()
+        }
+        currentDataTask?.resume()
     }
     
     func encodedURL(from urlString: String) -> URL? {

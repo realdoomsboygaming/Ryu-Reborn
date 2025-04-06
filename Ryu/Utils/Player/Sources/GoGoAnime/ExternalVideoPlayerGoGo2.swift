@@ -678,7 +678,6 @@ class ExternalVideoPlayerGoGo2: UIViewController, WKNavigationDelegate, WKScript
         
         if let timeObserverToken = timeObserverToken {
             player?.removeTimeObserver(timeObserverToken)
-            self.timeObserverToken = nil
         }
         
         webView?.stopLoading()
@@ -686,8 +685,11 @@ class ExternalVideoPlayerGoGo2: UIViewController, WKNavigationDelegate, WKScript
     }
     
     deinit {
-        cleanup()
+        if let timeObserverToken = timeObserverToken {
+            player?.removeTimeObserver(timeObserverToken)
+        }
         loadingObserver?.invalidate()
+        loadingObserver = nil
         NotificationCenter.default.removeObserver(self)
     }
     
