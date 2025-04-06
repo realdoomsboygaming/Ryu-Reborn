@@ -3,7 +3,8 @@ import WebKit
 import SwiftSoup
 import GoogleCast
 
-class ExternalVideoPlayerKura: UIViewController, GCKRemoteMediaClientListener {
+// Add WKNavigationDelegate conformance here
+class ExternalVideoPlayerKura: UIViewController, GCKRemoteMediaClientListener, WKNavigationDelegate {
     private let streamURL: String
     private var webView: WKWebView?
     private var player: AVPlayer?
@@ -180,12 +181,10 @@ class ExternalVideoPlayerKura: UIViewController, GCKRemoteMediaClientListener {
     private func selectQuality() {
         let preferredQuality = UserDefaults.standard.string(forKey: "preferredQuality") ?? "720p"
         
-        if let url = videoURLs[preferredQuality] {
-            if let videoURL = URL(string: url) {
-                handleVideoURL(url: videoURL)
-            }
+        if let url = videoURLs[preferredQuality], let videoURL = URL(string: url) {
+            handleVideoURL(url: videoURL)
         } else {
-            let availableQualities = videoURLs.keys.compactMap { Int($0.replacingOccurrences(of: "p", with: "")) }.sorted(by: >) // Sort descending
+             let availableQualities = videoURLs.keys.compactMap { Int($0.replacingOccurrences(of: "p", with: "")) }.sorted(by: >) // Sort descending
             let preferredQualityValue = Int(preferredQuality.replacingOccurrences(of: "p", with: "")) ?? 720
             
             // Find the closest quality <= preferred, or the highest available if none match
@@ -213,8 +212,7 @@ class ExternalVideoPlayerKura: UIViewController, GCKRemoteMediaClientListener {
                 }
             })
         }
-        
-        // Add cancel action
+
         alertController.addAction(UIAlertAction(title: "Cancel", style: .cancel, handler: { [weak self] _ in
             self?.dismiss(animated: true, completion: nil) // Dismiss if cancelled
         }))
@@ -260,7 +258,9 @@ class ExternalVideoPlayerKura: UIViewController, GCKRemoteMediaClientListener {
         
         let downloadManager = DownloadManager.shared
         let title = animeDetailsViewController?.animeTitle ?? "Anime Download"
+        // **FIXED:** Removed progress and completion closures
         downloadManager.startDownload(url: url, title: title)
+        
         self.animeDetailsViewController?.showAlert(withTitle: "Download Started", message: "Check the Downloads tab for progress.")
     }
     
@@ -279,7 +279,7 @@ class ExternalVideoPlayerKura: UIViewController, GCKRemoteMediaClientListener {
         }
         
         let builder = GCKMediaInformationBuilder(contentURL: videoURL)
-        builder.contentType = "video/mp4" // Assume mp4 for Kurama for now
+        builder.contentType = "video/mp4" // Assume MP4 for Kurama
         builder.metadata = metadata
         builder.streamType = UserDefaults.standard.string(forKey: "castStreamingType") == "live" ? .live : .buffered
         
@@ -412,7 +412,10 @@ class ExternalVideoPlayerKura: UIViewController, GCKRemoteMediaClientListener {
         playerViewController = nil
         
         if let timeObserverToken = timeObserverToken {
-            player?.removeTimeObserver(timeObserverToken)
+            // Ensure player exists before removing observer
+            if let player = self.player {
+                 player.removeTimeObserver(timeObserverToken)
+            }
             self.timeObserverToken = nil
         }
         
