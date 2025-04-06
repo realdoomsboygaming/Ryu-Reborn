@@ -39,6 +39,10 @@ class AnimeDetailViewController: UITableViewController, GCKRemoteMediaClientList
     
     private var currentDataTask: URLSessionDataTask?
     
+    var isSelectionMode = false
+    var selectedEpisodes: Set<Episode> = []
+    var rangeSelectionAlert: UIAlertController?
+    
     func configure(title: String, imageUrl: String, href: String, source: String) {
         self.animeTitle = title
         self.href = href
@@ -245,6 +249,12 @@ class AnimeDetailViewController: UITableViewController, GCKRemoteMediaClientList
         tableView.register(AnimeHeaderCell.self, forCellReuseIdentifier: "AnimeHeaderCell")
         tableView.register(SynopsisCell.self, forCellReuseIdentifier: "SynopsisCell")
         tableView.register(EpisodeCell.self, forCellReuseIdentifier: "EpisodeCell")
+        
+        let selectionButton = UIBarButtonItem(image: UIImage(systemName: "checkmark.circle"),
+                                            style: .plain,
+                                            target: self,
+                                            action: #selector(toggleSelectionMode))
+        navigationItem.leftBarButtonItem = selectionButton
     }
     
     private func setupNotifications() {
@@ -355,6 +365,8 @@ class AnimeDetailViewController: UITableViewController, GCKRemoteMediaClientList
             let episode = episodes[indexPath.row]
             cell.configure(episode: episode, delegate: self)
             cell.loadSavedProgress(for: episode.href)
+            cell.setSelectionMode(isSelectionMode)
+            cell.isSelected = selectedEpisodes.contains(episode)
             return cell
         default:
             return UITableViewCell()
@@ -701,10 +713,24 @@ class AnimeDetailViewController: UITableViewController, GCKRemoteMediaClientList
     
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        if indexPath.section == 2 {
-            let episode = episodes[indexPath.row]
-            if let cell = tableView.cellForRow(at: indexPath) as? EpisodeCell {
-                episodeSelected(episode: episode, cell: cell)
+        
+        if isSelectionMode {
+            if let cell = tableView.cellForRow(at: indexPath) as? EpisodeCell,
+               let episode = cell.episode {
+                if selectedEpisodes.contains(episode) {
+                    selectedEpisodes.remove(episode)
+                    cell.isSelected = false
+                } else {
+                    selectedEpisodes.insert(episode)
+                    cell.isSelected = true
+                }
+            }
+        } else {
+            if indexPath.section == 2 {
+                let episode = episodes[indexPath.row]
+                if let cell = tableView.cellForRow(at: indexPath) as? EpisodeCell {
+                    episodeSelected(episode: episode, cell: cell)
+                }
             }
         }
     }
@@ -1513,6 +1539,97 @@ class AnimeDetailViewController: UITableViewController, GCKRemoteMediaClientList
                 break
             }
         }
+    }
+    
+    @objc private func toggleSelectionMode() {
+        isSelectionMode.toggle()
+        selectedEpisodes.removeAll()
+        
+        // Update all visible cells
+        for cell in tableView.visibleCells {
+            if let episodeCell = cell as? EpisodeCell {
+                episodeCell.setSelectionMode(isSelectionMode)
+            }
+        }
+        
+        // Update navigation bar
+        if isSelectionMode {
+            navigationItem.leftBarButtonItem?.image = UIImage(systemName: "xmark.circle")
+            let rangeButton = UIBarButtonItem(image: UIImage(systemName: "number"),
+                                            style: .plain,
+                                            target: self,
+                                            action: #selector(showRangeSelection))
+            let downloadButton = UIBarButtonItem(image: UIImage(systemName: "arrow.down.circle"),
+                                               style: .plain,
+                                               target: self,
+                                               action: #selector(downloadSelectedEpisodes))
+            navigationItem.rightBarButtonItems = [rangeButton, downloadButton]
+        } else {
+            navigationItem.leftBarButtonItem?.image = UIImage(systemName: "checkmark.circle")
+            setupCastButton()
+        }
+        
+        tableView.reloadData()
+    }
+    
+    @objc private func showRangeSelection() {
+        let alert = UIAlertController(title: "Select Episode Range",
+                                    message: "Enter start and end episode numbers",
+                                    preferredStyle: .alert)
+        
+        alert.addTextField { textField in
+            textField.placeholder = "Start Episode"
+            textField.keyboardType = .numberPad
+        }
+        
+        alert.addTextField { textField in
+            textField.placeholder = "End Episode"
+            textField.keyboardType = .numberPad
+        }
+        
+        let selectAction = UIAlertAction(title: "Select", style: .default) { [weak self] _ in
+            guard let self = self,
+                  let startText = alert.textFields?[0].text,
+                  let endText = alert.textFields?[1].text,
+                  let start = Int(startText),
+                  let end = Int(endText) else { return }
+            
+            self.selectEpisodesInRange(start: start, end: end)
+        }
+        
+        let cancelAction = UIAlertAction(title: "Cancel", style: .cancel)
+        
+        alert.addAction(selectAction)
+        alert.addAction(cancelAction)
+        
+        present(alert, animated: true)
+    }
+    
+    private func selectEpisodesInRange(start: Int, end: Int) {
+        let range = min(start, end)...max(start, end)
+        selectedEpisodes.removeAll()
+        
+        for episode in episodes {
+            if let episodeNumber = Int(episode.number),
+               range.contains(episodeNumber) {
+                selectedEpisodes.insert(episode)
+            }
+        }
+        
+        tableView.reloadData()
+    }
+    
+    @objc private func downloadSelectedEpisodes() {
+        guard !selectedEpisodes.isEmpty else {
+            showAlert(title: "No Episodes Selected", message: "Please select episodes to download")
+            return
+        }
+        
+        for episode in selectedEpisodes {
+            downloadMedia(for: episode)
+        }
+        
+        toggleSelectionMode()
     }
 }
 

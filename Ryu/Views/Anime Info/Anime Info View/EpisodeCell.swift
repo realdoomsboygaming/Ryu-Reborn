@@ -25,6 +25,7 @@ class EpisodeCell: UITableViewCell {
     let playbackProgressView = UIProgressView(progressViewStyle: .default)
     let remainingTimeLabel = UILabel()
     let infoButton = UIButton(type: .infoLight)
+    let selectionCheckbox = UIImageView()
     
     private let progressFormatter: DateComponentsFormatter = {
         let formatter = DateComponentsFormatter()
@@ -42,11 +43,17 @@ class EpisodeCell: UITableViewCell {
     
     weak var delegate: AnimeDetailViewController?
     var episode: Episode?
+    var isSelected: Bool = false {
+        didSet {
+            updateSelectionState()
+        }
+    }
     
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
         setupCell()
         setupGestureRecognizers()
+        setupSelectionCheckbox()
     }
     
     required init?(coder: NSCoder) {
@@ -119,6 +126,33 @@ class EpisodeCell: UITableViewCell {
             
             contentView.bottomAnchor.constraint(equalTo: startnowLabel.bottomAnchor, constant: 10)
         ])
+    }
+    
+    private func setupSelectionCheckbox() {
+        selectionCheckbox.contentMode = .scaleAspectFit
+        selectionCheckbox.image = UIImage(systemName: "circle")
+        selectionCheckbox.tintColor = .systemBlue
+        selectionCheckbox.isHidden = true
+        contentView.addSubview(selectionCheckbox)
+        
+        selectionCheckbox.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            selectionCheckbox.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+            selectionCheckbox.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            selectionCheckbox.widthAnchor.constraint(equalToConstant: 24),
+            selectionCheckbox.heightAnchor.constraint(equalToConstant: 24)
+        ])
+    }
+    
+    private func updateSelectionState() {
+        selectionCheckbox.image = UIImage(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+    }
+    
+    func setSelectionMode(_ enabled: Bool) {
+        selectionCheckbox.isHidden = !enabled
+        if !enabled {
+            isSelected = false
+        }
     }
     
     func updatePlaybackProgress(progress: Float, remainingTime: TimeInterval) {
