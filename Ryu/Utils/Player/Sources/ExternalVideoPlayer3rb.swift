@@ -162,9 +162,10 @@ class ExternalVideoPlayer3rb: UIViewController, GCKRemoteMediaClientListener, WK
     
     private func extractIframeSource() {
         webView?.evaluateJavaScript("document.body.innerHTML") { [weak self] (result, error) in
+             // **FIXED:** Use guard let self = self else { return }
             guard let self = self, let htmlString = result as? String else {
                 print("Error getting HTML: \(error?.localizedDescription ?? "Unknown error")")
-                self?.retryExtraction() // Use optional chaining
+                self?.retryExtraction() // Now self is guaranteed non-nil here
                 return
             }
             
@@ -173,16 +174,17 @@ class ExternalVideoPlayer3rb: UIViewController, GCKRemoteMediaClientListener, WK
                 self.loadIframeContent(url: iframeURL)
             } else {
                 print("No iframe source found")
-                self.retryExtraction() // Use optional chaining
+                self.retryExtraction()
             }
         }
     }
     
     private func extractVideoSource() {
         webView?.evaluateJavaScript("document.body.innerHTML") { [weak self] (result, error) in
+             // **FIXED:** Use guard let self = self else { return }
             guard let self = self, let htmlString = result as? String else {
                 print("Error getting HTML: \(error?.localizedDescription ?? "Unknown error")")
-                self?.retryExtraction() // Use optional chaining
+                self?.retryExtraction() // Now self is guaranteed non-nil here
                 return
             }
             
@@ -193,7 +195,7 @@ class ExternalVideoPlayer3rb: UIViewController, GCKRemoteMediaClientListener, WK
                 }
             } else {
                 print("No video source found in iframe content")
-                self.retryExtraction() // Use optional chaining
+                self.retryExtraction()
             }
         }
     }
