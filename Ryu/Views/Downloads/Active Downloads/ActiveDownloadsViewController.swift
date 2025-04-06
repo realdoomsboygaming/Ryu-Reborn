@@ -1,10 +1,3 @@
-//
-//  ActiveDownloadsViewController.swift
-//  Ryu
-//
-//  Created by Francesco on 01/08/24.
-//
-
 import UIKit
 
 class ActiveDownloadsViewController: UIViewController, ProgressDownloadCellDelegate {
@@ -33,7 +26,8 @@ class ActiveDownloadsViewController: UIViewController, ProgressDownloadCellDeleg
         return label
     }()
     
-    private var downloads: [(title: String, progress: Float)] = []
+    private var downloads: [DownloadItem] = [] // Use DownloadItem
+    private var progressUpdateTimer: Timer?
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -42,9 +36,18 @@ class ActiveDownloadsViewController: UIViewController, ProgressDownloadCellDeleg
         loadDownloads()
         startProgressUpdateTimer()
         
-        NotificationCenter.default.addObserver(self, selector: #selector(downloadCompleted(_:)), name: .downloadCompleted, object: nil)
+        // Observe download completion
+        NotificationCenter.default.addObserver(self, selector: #selector(downloadCompletedOrFailed(_:)), name: .downloadCompleted, object: nil)
+         // Observe potential failures that might remove items from active list
+         NotificationCenter.default.addObserver(self, selector: #selector(downloadCompletedOrFailed(_:)), name: Notification.Name("DownloadFailedNotification"), object: DownloadManager.shared) // Assuming DownloadManager posts this on failure
+
     }
     
+     deinit {
+         progressUpdateTimer?.invalidate()
+         NotificationCenter.default.removeObserver(self)
+     }
+
     private func setupViews() {
         view.addSubview(scrollView)
         scrollView.addSubview(stackView)
@@ -70,8 +73,8 @@ class ActiveDownloadsViewController: UIViewController, ProgressDownloadCellDeleg
     }
     
     private func loadDownloads() {
-        let activeDownloads = DownloadManager.shared.getActiveDownloads()
-        downloads = activeDownloads.map { (title: $0.key, progress: $0.value) }
+        // Get active downloads from the manager
+        downloads = DownloadManager.shared.getActiveDownloadItems()
         updateDownloadViews()
     }
     
@@ -79,11 +82,13 @@ class ActiveDownloadsViewController: UIViewController, ProgressDownloadCellDeleg
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             
+            // Simple reload for now, could optimize later
             self.stackView.arrangedSubviews.forEach { $0.removeFromSuperview() }
             
-            for download in self.downloads {
+            for downloadItem in self.downloads {
                 let downloadView = ProgressDownloadCell()
-                downloadView.configure(with: download.title, progress: download.progress)
+                // Pass the item ID for cancellation context
+                downloadView.configure(with: downloadItem.title, progress: downloadItem.progress, downloadId: downloadItem.id)
                 downloadView.delegate = self
                 self.stackView.addArrangedSubview(downloadView)
             }
@@ -97,51 +102,59 @@ class ActiveDownloadsViewController: UIViewController, ProgressDownloadCellDeleg
         scrollView.isHidden = downloads.isEmpty
     }
     
+    // This timer updates progress frequently
     private func updateProgress() {
-        let activeDownloads = DownloadManager.shared.getActiveDownloads()
-        let newDownloads = activeDownloads.map { (title: $0.key, progress: $0.value) }
+        let activeDownloadItems = DownloadManager.shared.getActiveDownloadItems()
         
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             
-            for (index, download) in newDownloads.enumerated() {
-                if index < self.stackView.arrangedSubviews.count,
-                   let downloadView = self.stackView.arrangedSubviews[index] as? ProgressDownloadCell {
-                    downloadView.updateProgress(download.progress)
+            // Update existing cells or reload if counts differ significantly
+            if activeDownloadItems.count == self.stackView.arrangedSubviews.count {
+                for (index, item) in activeDownloadItems.enumerated() {
+                     if let cell = self.stackView.arrangedSubviews[index] as? ProgressDownloadCell {
+                        cell.updateProgress(item.progress)
+                     }
                 }
-            }
-            
-            if newDownloads.count != self.stackView.arrangedSubviews.count {
-                self.downloads = newDownloads
-                self.updateDownloadViews()
+                // Update local data source if needed (e.g., if status changed)
+                 self.downloads = activeDownloadItems
             } else {
-                self.downloads = newDownloads
+                 // If count differs, reload everything for simplicity
+                 self.downloads = activeDownloadItems
+                 self.updateDownloadViews()
             }
         }
     }
     
     private func startProgressUpdateTimer() {
-        Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+        progressUpdateTimer?.invalidate() // Invalidate existing timer first
+        progressUpdateTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             self?.updateProgress()
         }
     }
     
-    func cancelDownload(for cell: ProgressDownloadCell) {
-        guard let index = stackView.arrangedSubviews.firstIndex(of: cell) else { return }
-        let download = downloads[index]
+    // Delegate method from ProgressDownloadCell
+    func cancelDownload(for cell: ProgressDownloadCell, downloadId: String) {
+        // Use the downloadId passed from the cell
+        DownloadManager.shared.cancelDownload(for: downloadId)
         
-        DownloadManager.shared.cancelDownload(for: download.title)
-        
-        downloads.remove(at: index)
-        updateDownloadViews()
+        // Remove from local array and update UI immediately
+        if let index = downloads.firstIndex(where: { $0.id == downloadId }) {
+            downloads.remove(at: index)
+            // Animate removal from stack view
+            UIView.animate(withDuration: 0.3, animations: {
+                 cell.isHidden = true // Hide immediately
+                 cell.alpha = 0
+             }) { _ in
+                 cell.removeFromSuperview()
+                 self.updateEmptyState()
+             }
+        }
     }
     
-    
-    @objc private func downloadCompleted(_ notification: Notification) {
-        if let title = notification.userInfo?["title"] as? String,
-           let index = downloads.firstIndex(where: { $0.title == title }) {
-            downloads.remove(at: index)
-            updateDownloadViews()
-        }
+    // Called when a download finishes (successfully or failed)
+    @objc private func downloadCompletedOrFailed(_ notification: Notification) {
+        // Reload the list from the DownloadManager to reflect the change
+        loadDownloads()
     }
 }
